@@ -4,6 +4,8 @@ Research tooling for finding Path of Exile 1 currency-flipping opportunities on 
 
 The current slice ([#9](https://github.com/stdmitry/pathofflipper/issues/9)) fetches hourly currency exchange history from the [official API](https://www.pathofexile.com/developer/docs/reference#currencyexchange) into a local PostgreSQL database.
 
+**Only PoE 1 PC is supported.** Console realms (Xbox, PlayStation) are not collected ([#11](https://github.com/stdmitry/pathofflipper/issues/11)).
+
 ## Requirements
 
 - Node.js 22.18 or newer (runs the TypeScript sources directly)
@@ -27,13 +29,14 @@ The first start of the volume also creates `pathofflipper_test` for the integrat
 ```sh
 npm run fetch                          # up to 24 hours, resuming from the stored cursor
 npm run fetch -- --max-hours 3         # smaller batch
-npm run fetch -- --realm xbox          # pc (default), xbox or sony
 npm run fetch -- --help
 ```
 
+Every run, manual or scheduled, fetches PoE 1 PC only. `--realm` and `POE_REALM` accept only `pc`; any other value, such as `xbox` or `sony`, exits with 2 before connecting to the database or the API.
+
 Each run stores at most `--max-hours` completed hours (default 24, or `POE_MAX_HOURS`), then stops. It also stops early, with exit code 0, when it reaches the hour that hasn't been published yet. Failures exit with 1 and invalid options with 2.
 
-**Bootstrap.** When a realm has no stored cursor, the first request is for 24 completed hours ago. Override that once with `--start`:
+**Bootstrap.** When no PC cursor is stored, the first request is for 24 completed hours ago. Override that once with `--start`:
 
 - `--start 2026-09-20T00:00Z` (any ISO time with a zone, on the hour)
 - `--start 1790143200` (unix seconds, on the hour)
@@ -41,7 +44,7 @@ Each run stores at most `--max-hours` completed hours (default 24, or `POE_MAX_H
 
 After the first stored hour, `--start` is ignored and runs continue from the cursor.
 
-**Resuming.** Every hour commits its raw response, market rows and the advanced cursor in one transaction. If a run is interrupted, whether by Ctrl+C, a crash or a database outage, the next run continues from the last committed hour. The first Ctrl+C finishes the current hour and exits; a second aborts immediately, and the uncommitted hour is rolled back. Only one fetch per realm can run at a time.
+**Resuming.** Every hour commits its raw response, market rows and the advanced cursor in one transaction. If a run is interrupted, whether by Ctrl+C, a crash or a database outage, the next run continues from the last committed PC hour. Cursors left by other realms in older databases are ignored and never changed. The first Ctrl+C finishes the current hour and exits; a second aborts immediately, and the uncommitted hour is rolled back. Only one fetch can run at a time.
 
 **Failure handling.** Timeouts (30 s), network errors, HTTP 429 and 5xx are retried up to 5 attempts with exponential backoff, honoring `Retry-After` and the API's rate-limit headers. A response that fails validation is saved to `rejected_responses`, the cursor stays on that hour, and the run exits with 1. Requests identify the app through `User-Agent: pathofflipper/<version> (contact: $POE_USER_AGENT_CONTACT)`.
 
@@ -50,7 +53,7 @@ After the first stored hour, `--start` is ignored and runs continue from the cur
 Open a shell with `npm run db:psql`, then for example:
 
 ```sql
--- Collection progress per realm
+-- Collection progress (only the pc row is used; older non-PC rows are kept but ignored)
 SELECT realm, to_timestamp(next_cursor) AS next_hour, last_success_at, last_error, last_error_at
 FROM ingestion_cursors;
 

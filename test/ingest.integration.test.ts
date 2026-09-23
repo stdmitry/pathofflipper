@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import pg from 'pg';
-import type { Realm } from '../src/config.ts';
 import type { ExchangeResponse, ExchangeSource } from '../src/exchange/client.ts';
 import { runMigrations } from '../src/db/migrate.ts';
 import { MalformedResponseError } from '../src/exchange/parse.ts';
@@ -33,7 +32,7 @@ class FakeExchange implements ExchangeSource {
     this.hours = hours;
   }
 
-  async get(_realm: Realm, cursor: number | null): Promise<ExchangeResponse> {
+  async get(cursor: number | null): Promise<ExchangeResponse> {
     this.requested.push(cursor);
     const url = `fake/${cursor}`;
     if (cursor === null) return { url, status: 200, body: hourBody(H0 - HOUR) };
@@ -53,7 +52,6 @@ describe('ingest (PostgreSQL)', { skip }, () => {
     Number((await pool.query<{ n: string }>(`SELECT count(*) AS n FROM ${table}`)).rows[0]?.n);
 
   const options = (overrides: Partial<IngestOptions> = {}): IngestOptions => ({
-    realm: 'pc',
     maxHours: 10,
     start: { kind: 'hour', cursor: H0 },
     ...overrides,
@@ -80,7 +78,7 @@ describe('ingest (PostgreSQL)', { skip }, () => {
     assert.equal(summary.hoursStored, 2);
     assert.equal(summary.marketsInserted, 2 * FIXTURE_MARKETS);
     assert.deepEqual(exchange.requested, [H0, H0 + HOUR]);
-    assert.equal(await readCursor(pool, 'pc'), H0 + 2 * HOUR);
+    assert.equal(await readCursor(pool), H0 + 2 * HOUR);
     assert.equal(await count('raw_digests'), 2);
     assert.equal(await count('market_hours'), 2 * FIXTURE_MARKETS);
 
@@ -106,7 +104,51 @@ describe('ingest (PostgreSQL)', { skip }, () => {
     assert.equal(second.stopReason, 'caught-up');
     assert.equal(second.hoursStored, 1);
     assert.deepEqual(exchange.requested, [H0, H0 + HOUR, H0 + 2 * HOUR, H0 + 3 * HOUR]);
-    assert.equal(await readCursor(pool, 'pc'), H0 + 3 * HOUR);
+    assert.equal(await readCursor(pool), H0 + 3 * HOUR);
+  });
+
+  it('ignores cursors of other realms when bootstrapping and resuming', async () => {
+    await pool.query(
+      `INSERT INTO ingestion_cursors (realm, next_cursor, last_error, last_error_at)
+       VALUES ('xbox', $1, 'old xbox error', now()), ('sony', $2, NULL, NULL)`,
+      [H0 + 50 * HOUR, H0 - 10 * HOUR],
+    );
+    const before = await pool.query(`SELECT * FROM ingestion_cursors WHERE realm <> 'pc' ORDER BY realm`);
+    const exchange = new FakeExchange(4);
+
+    // No PC cursor yet: bootstrap from the start point, not from another realm's cursor.
+    await ingest(pool, exchange, options({ maxHours: 2 }));
+    assert.deepEqual(exchange.requested, [H0, H0 + HOUR]);
+    assert.equal(await readCursor(pool), H0 + 2 * HOUR);
+
+    // With a PC cursor: resume from it, still regardless of the other cursors.
+    const resumed = await ingest(pool, exchange, options({ maxHours: 10 }));
+    assert.equal(resumed.stopReason, 'caught-up');
+    assert.deepEqual(exchange.requested, [H0, H0 + HOUR, H0 + 2 * HOUR, H0 + 3 * HOUR, H0 + 4 * HOUR]);
+    assert.equal(await readCursor(pool), H0 + 4 * HOUR);
+
+    const after = await pool.query(`SELECT * FROM ingestion_cursors WHERE realm <> 'pc' ORDER BY realm`);
+    assert.deepEqual(after.rows, before.rows);
+  });
+
+  it('writes digests, markets, rejections and cursor updates only under pc', async () => {
+    const exchange = new FakeExchange(3);
+    exchange.overrides.set(H0 + 2 * HOUR, { url: 'fake', status: 200, body: '{"next_change_id":1,"markets":[]}' });
+    await assert.rejects(ingest(pool, exchange, options()), MalformedResponseError);
+
+    const { rows } = await pool.query(
+      `SELECT 'raw_digests' AS source, realm, count(*)::int AS n FROM raw_digests GROUP BY realm
+       UNION ALL SELECT 'market_hours', realm, count(*)::int FROM market_hours GROUP BY realm
+       UNION ALL SELECT 'rejected_responses', realm, count(*)::int FROM rejected_responses GROUP BY realm
+       UNION ALL SELECT 'ingestion_cursors', realm, count(*)::int FROM ingestion_cursors GROUP BY realm
+       ORDER BY 1`,
+    );
+    assert.deepEqual(rows, [
+      { source: 'ingestion_cursors', realm: 'pc', n: 1 },
+      { source: 'market_hours', realm: 'pc', n: 2 * FIXTURE_MARKETS },
+      { source: 'raw_digests', realm: 'pc', n: 2 },
+      { source: 'rejected_responses', realm: 'pc', n: 1 },
+    ]);
   });
 
   it('bootstraps from the earliest history when asked', async () => {
@@ -173,7 +215,7 @@ describe('ingest (PostgreSQL)', { skip }, () => {
     exchange.overrides.set(H0 + HOUR, { url: 'fake', status: 200, body: bad });
 
     await assert.rejects(ingest(pool, exchange, options()), MalformedResponseError);
-    assert.equal(await readCursor(pool, 'pc'), H0 + HOUR);
+    assert.equal(await readCursor(pool), H0 + HOUR);
     assert.equal(await count('raw_digests'), 1);
     const { rows } = await pool.query('SELECT request_cursor, body, jsonb_array_length(problems) AS problems FROM rejected_responses');
     assert.deepEqual(rows, [{ request_cursor: String(H0 + HOUR), body: bad, problems: 2 }]);
@@ -182,7 +224,7 @@ describe('ingest (PostgreSQL)', { skip }, () => {
     exchange.overrides.clear();
     await ingest(pool, exchange, options());
     assert.equal(exchange.requested.filter((cursor) => cursor === H0 + HOUR).length, 2);
-    assert.equal(await readCursor(pool, 'pc'), H0 + 5 * HOUR);
+    assert.equal(await readCursor(pool), H0 + 5 * HOUR);
   });
 
   it('refuses to run while another fetch holds the realm lock', async () => {
