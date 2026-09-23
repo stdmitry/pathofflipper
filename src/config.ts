@@ -1,17 +1,19 @@
 export const APP_NAME = 'pathofflipper';
 export const APP_VERSION = '0.1.0';
 
-export const REALMS = ['pc', 'xbox', 'sony'] as const;
-export type Realm = (typeof REALMS)[number];
+/** Only PoE 1 PC is collected. Console realms (xbox, sony) are rejected, not fetched. */
+export const REALM = 'pc';
+export type Realm = typeof REALM;
 
 export class ConfigError extends Error {
   override name = 'ConfigError';
 }
 
 export function parseRealm(value: string): Realm {
-  const realm = REALMS.find((candidate) => candidate === value);
-  if (!realm) throw new ConfigError(`Unknown realm "${value}"; expected one of ${REALMS.join(', ')}`);
-  return realm;
+  if (value !== REALM) {
+    throw new ConfigError(`Realm "${value}" is not supported; only PoE 1 PC ("${REALM}") is collected`);
+  }
+  return REALM;
 }
 
 export function requireEnv(name: string): string {

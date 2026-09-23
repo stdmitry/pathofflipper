@@ -1,4 +1,3 @@
-import type { Realm } from '../config.ts';
 import { silentLogger, type Logger } from '../log.ts';
 
 export const EXCHANGE_BASE_URL = 'https://web.poecdn.com/api/currency-exchange';
@@ -10,7 +9,8 @@ export interface ExchangeResponse {
 }
 
 export interface ExchangeSource {
-  get(realm: Realm, cursor: number | null): Promise<ExchangeResponse>;
+  /** Fetches the PoE 1 PC page for `cursor`, or the earliest history when it is null. */
+  get(cursor: number | null): Promise<ExchangeResponse>;
 }
 
 export interface ExchangeClientOptions {
@@ -39,12 +39,9 @@ export class HttpFailure extends Error {
   }
 }
 
-export function exchangeUrl(baseUrl: string, realm: Realm, cursor: number | null): string {
-  // PC is the default realm and has no path segment; `/pc/...` returns 404.
-  const segments = [baseUrl];
-  if (realm !== 'pc') segments.push(realm);
-  if (cursor !== null) segments.push(String(cursor));
-  return segments.join('/');
+export function exchangeUrl(baseUrl: string, cursor: number | null): string {
+  // PoE 1 PC is the API's default realm and has no path segment; `/pc/...` returns 404.
+  return cursor === null ? baseUrl : `${baseUrl}/${cursor}`;
 }
 
 /** Parses Retry-After (seconds or an HTTP date) into milliseconds from now. */
@@ -120,8 +117,8 @@ export class ExchangeClient implements ExchangeSource {
    * Fetches one page. Returns 2xx and 404 responses for the caller to interpret; retries transient
    * failures; throws HttpFailure for other client errors or when retries are exhausted.
    */
-  async get(realm: Realm, cursor: number | null): Promise<ExchangeResponse> {
-    const url = exchangeUrl(this.baseUrl, realm, cursor);
+  async get(cursor: number | null): Promise<ExchangeResponse> {
+    const url = exchangeUrl(this.baseUrl, cursor);
     for (let attempt = 1; ; attempt++) {
       await this.waitForRateLimit();
 
