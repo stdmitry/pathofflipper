@@ -50,9 +50,9 @@ Proposed tables:
 - `pairs`: integer ID and both item IDs in upstream `market_pair` order; unique by the ordered pair.
 - `leagues`: integer ID, realm, name.
 - `pair_hours`: league ID, pair ID, hour, and the five volume/stock/ratio fields per side as `bigint`; primary key (league, pair, hour). Zero-volume rows are kept. Provenance joins on the hour to `raw_digests`.
+- `market_metrics`: market/window identifiers, coverage, normalized metrics, calculation version, computation time.
 
 Decided 2026-09-23: the original jsonb `market_hours` table (about 900 bytes per row, 10 GB at 9.5M rows) is replaced by the dictionaries and `pair_hours` above (about 120 bytes per row), rebuilt from `raw_digests`. Details and the cutover: [#13](https://github.com/stdmitry/pathofflipper/issues/13).
-- `market_metrics`: market/window identifiers, coverage, normalized metrics, calculation version, computation time.
 
 Commit digest, normalized rows, and cursor atomically. Replaying a cursor must not duplicate rows. Preserve integer amounts exactly and use decimal/rational arithmetic for ratios. Quarantine malformed records visibly, retaining the raw payload.
 
