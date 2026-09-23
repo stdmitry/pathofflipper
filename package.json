@@ -1,0 +1,27 @@
+{
+  "name": "pathofflipper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Path of Exile 1 currency exchange flipping research",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:migrate": "node --env-file-if-exists=.env src/cli/migrate.ts",
+    "db:psql": "docker compose exec db sh -c 'exec psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'",
+    "fetch": "node --env-file-if-exists=.env src/cli/fetch.ts",
+    "test": "node --env-file-if-exists=.env --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
+    "typescript": "^7.0.2"
+  }
+}

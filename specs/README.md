@@ -6,6 +6,8 @@ All project specifications live in this directory. Start with [Project brief](./
 
 See [Implementation plan](./implementation-plan.md) for API findings, proposed architecture, delivery phases, and validation requirements.
 
+[Currency exchange API observations](./exchange-api-observations.md) records measured cursor, hour, realm, and payload behavior from the first collector implementation.
+
 We will capture confirmed requirements here as the project takes shape, keeping open questions separate from agreed decisions.
 
 [GitHub issue backlog](./github-issue-drafts.md) links the nine published issues in [stdmitry/pathofflipper](https://github.com/stdmitry/pathofflipper/issues). Start with [#9: fetch currency exchange data and set up PostgreSQL](https://github.com/stdmitry/pathofflipper/issues/9).
