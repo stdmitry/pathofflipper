@@ -42,8 +42,12 @@ function problemsOf(fn: () => unknown): string[] {
 
 describe('interpretResponse', () => {
   it('accepts the real fixture and maps it to the requested hour', () => {
-    const result = interpretResponse(200, fixtureBody, FIXTURE_CURSOR);
+    const { markets: records, ...result } = interpretResponse(200, fixtureBody, FIXTURE_CURSOR) as Extract<
+      ReturnType<typeof interpretResponse>,
+      { kind: 'hour' }
+    >;
     const markets = JSON.parse(fixtureBody).markets as { volume_traded: Record<string, number> }[];
+    assert.equal(records.length, 232);
     assert.deepEqual(result, {
       kind: 'hour',
       sourceHour: FIXTURE_CURSOR,
@@ -121,10 +125,59 @@ describe('interpretResponse', () => {
     assert.equal(problems.length, 6);
     assert.match(problems[0]!, /markets\[0\]\.league/);
     assert.match(problems[1]!, /markets\[1\]\.market_pair/);
-    assert.match(problems[2]!, /markets\[2\]\.volume_traded.*must be a number/);
+    assert.match(problems[2]!, /markets\[2\]\.volume_traded.*must be an integer/);
     assert.match(problems[3]!, /markets\[3\]\.lowest_stock/);
     assert.match(problems[4]!, /markets\[4\]\.highest_ratio/);
     assert.match(problems[5]!, /markets\[5\] is not an object/);
+  });
+
+  it('returns each market with its values in market_pair order', () => {
+    const result = interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market()]), FIXTURE_CURSOR);
+    assert.deepEqual(result.kind === 'hour' && result.markets, [
+      {
+        league: 'Standard',
+        pair: [A, B],
+        values: {
+          volume_traded: [0, 0],
+          lowest_stock: [1, 2],
+          highest_stock: [3, 4],
+          lowest_ratio: [1, 5],
+          highest_ratio: [1, 7],
+        },
+      },
+    ]);
+  });
+
+  it('accepts integers up to 2^53 - 1 and rejects fractions and larger values', () => {
+    const max = Number.MAX_SAFE_INTEGER;
+    const ok = interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market({ volume_traded: { [A]: max, [B]: -1 } })]), FIXTURE_CURSOR);
+    assert.deepEqual(ok.kind === 'hour' && ok.markets[0]?.values.volume_traded, [max, -1]);
+
+    const body = `{"next_change_id":${FIXTURE_CURSOR + 3600},"markets":[${JSON.stringify(market()).replace(
+      /"lowest_ratio":\{[^}]*\}/,
+      `"lowest_ratio":{"${A}":1.5,"${B}":9007199254740993}`,
+    )}]}`;
+    const problems = problemsOf(() => interpretResponse(200, body, FIXTURE_CURSOR));
+    assert.equal(problems.length, 2);
+    assert.match(problems[0]!, /lowest_ratio\[.*CurrencyRerollRare\] must be an integer.*1\.5/);
+    assert.match(problems[1]!, /lowest_ratio\[.*UnknownFutureCurrency\] must be an integer/);
+  });
+
+  it('requires market_id to be the two market_pair ids joined by |', () => {
+    const problems = problemsOf(() =>
+      interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market({ market_id: `${B}|${A}` })]), FIXTURE_CURSOR),
+    );
+    assert.match(problems[0]!, /market_id must be/);
+  });
+
+  it('rejects a pair that appears in both orders', () => {
+    const reversed = market({
+      league: 'Hardcore',
+      market_id: `${B}|${A}`,
+      market_pair: [B, A],
+    });
+    const problems = problemsOf(() => interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market(), reversed]), FIXTURE_CURSOR));
+    assert.match(problems[0]!, /markets\[1\]\.market_pair .* reverse order/);
   });
 
   it('rejects duplicate league/market pairs', () => {

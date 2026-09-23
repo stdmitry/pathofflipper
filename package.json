@@ -13,6 +13,8 @@
     "db:migrate": "node --env-file-if-exists=.env src/cli/migrate.ts",
     "db:psql": "docker compose exec db sh -c 'exec psql -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"'",
     "fetch": "node --env-file-if-exists=.env src/cli/fetch.ts",
+    "rebuild": "node --env-file-if-exists=.env src/cli/rebuild.ts",
+    "item-names": "node --env-file-if-exists=.env src/cli/item-names.ts",
     "test": "node --env-file-if-exists=.env --test --test-concurrency=1 \"test/**/*.test.ts\"",
     "typecheck": "tsc"
   },
