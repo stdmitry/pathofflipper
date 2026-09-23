@@ -14,6 +14,8 @@ Status: observed 2026-09-23 against `https://web.poecdn.com/api/currency-exchang
 
 ## Realms
 
+The collector requests PoE 1 PC only ([#11](https://github.com/stdmitry/pathofflipper/issues/11)). The console observations below are kept for reference.
+
 - PC has no path segment. `/pc/<cursor>` returns 404.
 - `/xbox/<cursor>` and `/sony/<cursor>` return data (55 and 88 markets for 2026-09-23 06:00 UTC).
 - `/sony` without a cursor returned 0 markets with `next_change_id = 1722027600`, an empty earliest hour.

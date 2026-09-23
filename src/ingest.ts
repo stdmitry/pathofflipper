@@ -1,18 +1,17 @@
 import type pg from 'pg';
-import type { Realm } from './config.ts';
+import { REALM } from './config.ts';
 import type { ExchangeResponse, ExchangeSource } from './exchange/client.ts';
 import { hourIso, type StartPoint } from './exchange/hours.ts';
 import { interpretResponse, MalformedResponseError, PARSER_VERSION, sha256 } from './exchange/parse.ts';
 import { errorMessage, silentLogger, type Logger } from './log.ts';
 
-// Advisory lock namespace; the second key is the realm, so realms can be fetched in parallel.
+// Advisory lock namespace; the second key is the realm, kept so the lock matches earlier releases.
 const INGEST_LOCK_NAMESPACE = 7_319_001;
 
 export interface IngestOptions {
-  realm: Realm;
   /** Upper bound on hours stored in this run. */
   maxHours: number;
-  /** Used only when no cursor is stored for the realm yet. */
+  /** Used only when no PC cursor is stored yet. */
   start: StartPoint;
   /** Pause between successful requests. */
   pauseMs?: number;
@@ -26,7 +25,6 @@ export interface IngestOptions {
 export type StopReason = 'caught-up' | 'limit' | 'interrupted';
 
 export interface IngestSummary {
-  realm: Realm;
   stopReason: StopReason;
   hoursStored: number;
   marketsInserted: number;
@@ -40,7 +38,7 @@ export class ConcurrentRunError extends Error {
 }
 
 /**
- * Fetches completed hours starting at the stored cursor (or `start` on the first run) and stores
+ * Fetches completed PoE 1 PC hours starting at the stored PC cursor (or `start` on the first run) and stores
  * each one atomically: raw digest, market rows and cursor advance commit together or not at all.
  */
 export async function ingest(pool: pg.Pool, source: ExchangeSource, options: IngestOptions): Promise<IngestSummary> {
@@ -49,16 +47,16 @@ export async function ingest(pool: pg.Pool, source: ExchangeSource, options: Ing
   try {
     const { rows } = await lockClient.query<{ locked: boolean }>(
       'SELECT pg_try_advisory_lock($1, hashtext($2)) AS locked',
-      [INGEST_LOCK_NAMESPACE, options.realm],
+      [INGEST_LOCK_NAMESPACE, REALM],
     );
-    if (!rows[0]?.locked) throw new ConcurrentRunError(`Another fetch is already running for realm ${options.realm}`);
+    if (!rows[0]?.locked) throw new ConcurrentRunError(`Another fetch is already running for realm ${REALM}`);
     try {
       return await run(pool, source, options, logger);
     } catch (error) {
-      await recordFailure(pool, options.realm, error, logger);
+      await recordFailure(pool, error, logger);
       throw error;
     } finally {
-      await lockClient.query('SELECT pg_advisory_unlock($1, hashtext($2))', [INGEST_LOCK_NAMESPACE, options.realm]);
+      await lockClient.query('SELECT pg_advisory_unlock($1, hashtext($2))', [INGEST_LOCK_NAMESPACE, REALM]);
     }
   } finally {
     lockClient.release();
@@ -66,11 +64,12 @@ export async function ingest(pool: pg.Pool, source: ExchangeSource, options: Ing
 }
 
 async function run(pool: pg.Pool, source: ExchangeSource, options: IngestOptions, logger: Logger): Promise<IngestSummary> {
-  const { realm, maxHours } = options;
+  const { maxHours } = options;
+  const realm = REALM;
   const now = options.now ?? (() => new Date());
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 
-  let storedCursor = await readCursor(pool, realm);
+  let storedCursor = await readCursor(pool);
   let requestCursor: number | null;
   if (storedCursor === null) {
     requestCursor = options.start.kind === 'hour' ? options.start.cursor : null;
@@ -84,7 +83,6 @@ async function run(pool: pg.Pool, source: ExchangeSource, options: IngestOptions
   }
 
   const summary: IngestSummary = {
-    realm,
     stopReason: 'limit',
     hoursStored: 0,
     marketsInserted: 0,
@@ -98,14 +96,14 @@ async function run(pool: pg.Pool, source: ExchangeSource, options: IngestOptions
       return summary;
     }
 
-    const response = await source.get(realm, requestCursor);
+    const response = await source.get(requestCursor);
     const fetchedAt = now();
     let result;
     try {
       result = interpretResponse(response.status, response.body, requestCursor);
     } catch (error) {
       if (error instanceof MalformedResponseError) {
-        await recordRejected(pool, realm, requestCursor, response, fetchedAt, error, logger);
+        await recordRejected(pool, requestCursor, response, fetchedAt, error, logger);
       }
       throw error;
     }
@@ -125,7 +123,6 @@ async function run(pool: pg.Pool, source: ExchangeSource, options: IngestOptions
     }
 
     const stored = await storeHour(pool, {
-      realm,
       requestCursor,
       expectedCursor: storedCursor,
       sourceHour: result.sourceHour,
@@ -161,17 +158,17 @@ async function run(pool: pg.Pool, source: ExchangeSource, options: IngestOptions
   return summary;
 }
 
-export async function readCursor(pool: pg.Pool, realm: Realm): Promise<number | null> {
+/** The PC cursor; cursors left by other realms are never read. */
+export async function readCursor(pool: pg.Pool): Promise<number | null> {
   const { rows } = await pool.query<{ next_cursor: string | null }>(
     'SELECT next_cursor FROM ingestion_cursors WHERE realm = $1',
-    [realm],
+    [REALM],
   );
   const value = rows[0]?.next_cursor;
   return value == null ? null : Number(value);
 }
 
 interface StoreHourInput {
-  realm: Realm;
   requestCursor: number | null;
   /** Cursor value this run last read or wrote; the update fails if another writer changed it. */
   expectedCursor: number | null;
@@ -201,7 +198,7 @@ async function storeHour(pool: pg.Pool, input: StoreHourInput): Promise<StoreHou
        ON CONFLICT (realm, source_hour, checksum) DO UPDATE SET last_fetched_at = EXCLUDED.last_fetched_at
        RETURNING id, (xmax = 0) AS inserted`,
       [
-        input.realm,
+        REALM,
         input.requestCursor,
         input.nextCursor,
         input.sourceHour,
@@ -236,10 +233,10 @@ async function storeHour(pool: pg.Pool, input: StoreHourInput): Promise<StoreHou
          SET next_cursor = EXCLUDED.next_cursor, last_success_at = EXCLUDED.last_success_at,
              last_error = NULL, last_error_at = NULL, updated_at = now()
          WHERE ingestion_cursors.next_cursor IS NOT DISTINCT FROM $4::bigint`,
-      [input.realm, input.nextCursor, input.fetchedAt, input.expectedCursor],
+      [REALM, input.nextCursor, input.fetchedAt, input.expectedCursor],
     );
     if (cursor.rowCount !== 1) {
-      throw new ConcurrentRunError(`Cursor for realm ${input.realm} changed during the run; nothing was stored`);
+      throw new ConcurrentRunError(`Cursor for realm ${REALM} changed during the run; nothing was stored`);
     }
 
     await client.query('COMMIT');
@@ -258,7 +255,6 @@ async function storeHour(pool: pg.Pool, input: StoreHourInput): Promise<StoreHou
 
 async function recordRejected(
   pool: pg.Pool,
-  realm: Realm,
   requestCursor: number | null,
   response: ExchangeResponse,
   fetchedAt: Date,
@@ -269,10 +265,10 @@ async function recordRejected(
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO rejected_responses (realm, request_cursor, http_status, checksum, problems, body, fetched_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [realm, requestCursor, response.status, sha256(response.body), JSON.stringify(error.problems), response.body, fetchedAt],
+      [REALM, requestCursor, response.status, sha256(response.body), JSON.stringify(error.problems), response.body, fetchedAt],
     );
     logger.error('rejected malformed response; cursor not advanced', {
-      realm,
+      realm: REALM,
       request_hour: requestCursor === null ? 'earliest' : hourIso(requestCursor),
       rejected_response_id: rows[0]?.id,
       problems: error.problems.length,
@@ -282,13 +278,13 @@ async function recordRejected(
   }
 }
 
-async function recordFailure(pool: pg.Pool, realm: Realm, error: unknown, logger: Logger): Promise<void> {
+async function recordFailure(pool: pg.Pool, error: unknown, logger: Logger): Promise<void> {
   const message = errorMessage(error);
   try {
     await pool.query(
       `INSERT INTO ingestion_cursors (realm, last_error, last_error_at, updated_at) VALUES ($1, $2, now(), now())
        ON CONFLICT (realm) DO UPDATE SET last_error = EXCLUDED.last_error, last_error_at = now(), updated_at = now()`,
-      [realm, message],
+      [REALM, message],
     );
   } catch (recordError) {
     logger.error('could not record failure on the cursor', { error: errorMessage(recordError) });

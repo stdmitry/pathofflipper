@@ -6,12 +6,13 @@ import { defaultStart, hourIso, parseStart } from '../exchange/hours.ts';
 import { ingest } from '../ingest.ts';
 import { createLogger, errorMessage } from '../log.ts';
 
-const USAGE = `Fetch completed hours of PoE 1 currency exchange history into PostgreSQL.
+const USAGE = `Fetch completed hours of PoE 1 PC currency exchange history into PostgreSQL.
 
 Usage: npm run fetch -- [options]
 
 Options:
-  --realm <pc|xbox|sony>  Realm to fetch (default: POE_REALM or pc)
+  --realm <pc>            Only pc (PoE 1 PC) is supported; other values are rejected
+                          (default: POE_REALM or pc)
   --max-hours <n>         Stop after storing n hours (default: POE_MAX_HOURS or 24)
   --start <when>          First hour when no cursor is stored yet: "earliest", unix seconds,
                           or an ISO time such as 2026-09-22T00:00Z (default: 24 hours ago).
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Validated before anything connects, so an unsupported realm never fetches or writes.
   const realm = parseRealm(values.realm ?? process.env.POE_REALM ?? 'pc');
   const maxHours = parsePositiveInt('--max-hours', values['max-hours'] ?? process.env.POE_MAX_HOURS ?? '24');
   const pauseMs = parseNonNegativeInt('--pause-ms', values['pause-ms'] ?? '1000');
@@ -63,7 +65,6 @@ async function main(): Promise<void> {
   try {
     const client = new ExchangeClient({ userAgent: userAgent(contact), logger });
     const summary = await ingest(pool, client, {
-      realm,
       maxHours,
       start,
       pauseMs,
