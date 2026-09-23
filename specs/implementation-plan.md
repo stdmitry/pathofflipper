@@ -45,9 +45,13 @@ Flow: exchange endpoint → collector → raw digests and normalized markets →
 Proposed tables:
 
 - `ingestion_cursors`: realm, committed cursor, last success, retry state.
-- `raw_digests`: realm, request cursor, returned cursor, fetch time, payload, checksum, parser version.
-- `market_hours`: realm, league, hour, market ID, both item IDs, original volume/stock/ratio maps; unique by realm, league, hour, market ID.
-- `currencies`: item ID, display name, reviewed classification.
+- `raw_digests`: realm, request cursor, returned cursor, fetch time, payload (kept permanently, lz4-compressed), checksum, parser version; unique by realm and hour.
+- `items`: integer ID, Metadata path, display name seeded from a vendored RePoE snapshot (NULL when unknown).
+- `pairs`: integer ID and both item IDs in upstream `market_pair` order; unique by the ordered pair.
+- `leagues`: integer ID, realm, name.
+- `pair_hours`: league ID, pair ID, hour, and the five volume/stock/ratio fields per side as `bigint`; primary key (league, pair, hour). Zero-volume rows are kept. Provenance joins on the hour to `raw_digests`.
+
+Decided 2026-09-23: the original jsonb `market_hours` table (about 900 bytes per row, 10 GB at 9.5M rows) is replaced by the dictionaries and `pair_hours` above (about 120 bytes per row), rebuilt from `raw_digests`. Details and the cutover: [#13](https://github.com/stdmitry/pathofflipper/issues/13).
 - `market_metrics`: market/window identifiers, coverage, normalized metrics, calculation version, computation time.
 
 Commit digest, normalized rows, and cursor atomically. Replaying a cursor must not duplicate rows. Preserve integer amounts exactly and use decimal/rational arithmetic for ratios. Quarantine malformed records visibly, retaining the raw payload.
