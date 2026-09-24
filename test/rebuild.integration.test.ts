@@ -6,6 +6,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import pg from 'pg';
 import { MIGRATIONS_DIR, runMigrations } from '../src/db/migrate.ts';
 import { sha256 } from '../src/exchange/parse.ts';
+import { parsePending } from '../src/parse-hours.ts';
 import { rebuild } from '../src/rebuild.ts';
 import {
   count as countRows,
@@ -159,9 +160,11 @@ describe('rebuild and the market_hours drop (PostgreSQL)', { skip }, () => {
     await assert.rejects(runMigrations(pool), /not fully rebuilt/);
 
     await rebuild(pool, { itemNames });
-    assert.deepEqual(await runMigrations(pool), ['0003_drop_market_hours.sql']);
+    assert.deepEqual(await runMigrations(pool), ['0003_drop_market_hours.sql', '0004_separate_parsing.sql']);
     const { rows } = await pool.query(`SELECT to_regclass('market_hours') AS t`);
     assert.equal(rows[0]?.t, null);
+    // Rebuilt digests count as parsed, so the parse stage has nothing left to do.
+    assert.equal((await parsePending(pool, { itemNames })).hoursPending, 0);
 
     const afterDrop = await rebuild(pool, { itemNames });
     assert.equal(afterDrop.valueMismatches, null);

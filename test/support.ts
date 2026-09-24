@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type pg from 'pg';
+import type { ExchangeResponse, ExchangeSource } from '../src/exchange/client.ts';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 export const skipWithoutDatabase = TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not set (see README: Tests)';
@@ -33,4 +34,27 @@ export async function resetSchema(pool: pg.Pool): Promise<void> {
 
 export async function count(pool: pg.Pool, table: string): Promise<number> {
   return Number((await pool.query<{ n: string }>(`SELECT count(*) AS n FROM ${table}`)).rows[0]?.n);
+}
+
+/** Serves `hours` published hours starting at H0; later cursors answer like the unpublished current hour. */
+export class FakeExchange implements ExchangeSource {
+  readonly requested: (number | null)[] = [];
+  readonly overrides = new Map<number, ExchangeResponse>();
+  private readonly hours: number;
+
+  constructor(hours: number) {
+    this.hours = hours;
+  }
+
+  async get(cursor: number | null): Promise<ExchangeResponse> {
+    this.requested.push(cursor);
+    const url = `fake/${cursor}`;
+    if (cursor === null) return { url, status: 200, body: hourBody(H0 - HOUR) };
+    const override = this.overrides.get(cursor);
+    if (override) return override;
+    if (cursor >= H0 + this.hours * HOUR) {
+      return { url, status: 404, body: JSON.stringify({ next_change_id: cursor, markets: [] }) };
+    }
+    return { url, status: 200, body: hourBody(cursor) };
+  }
 }

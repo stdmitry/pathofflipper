@@ -1,10 +1,10 @@
 import type pg from 'pg';
 import { REALM } from './config.ts';
-import { storeMarkets } from './db/markets.ts';
 import { hourIso } from './exchange/hours.ts';
-import { interpretResponse, MalformedResponseError, NUMERIC_FIELDS, PARSER_VERSION } from './exchange/parse.ts';
-import { withIngestLock } from './ingest.ts';
+import { MalformedResponseError, NUMERIC_FIELDS, PARSER_VERSION } from './exchange/parse.ts';
+import { withIngestLock, withParseLock } from './ingest.ts';
 import type { ItemNames } from './items.ts';
+import { parseStoredDigest, type HourProblem } from './parse-hours.ts';
 import { errorMessage, silentLogger, type Logger } from './log.ts';
 
 export interface RebuildOptions {
@@ -12,11 +12,6 @@ export interface RebuildOptions {
   /** Checked before each hour; returning true ends the run after the current hour. */
   shouldStop?: () => boolean;
   logger?: Logger;
-}
-
-export interface HourProblem {
-  sourceHour: string;
-  problem: string;
 }
 
 export interface RebuildSummary {
@@ -39,10 +34,10 @@ export interface RebuildSummary {
  */
 export async function rebuild(pool: pg.Pool, options: RebuildOptions): Promise<RebuildSummary> {
   const logger = options.logger ?? silentLogger;
-  return withIngestLock(pool, async () => {
+  return withIngestLock(pool, () => withParseLock(pool, async () => {
     const counts = await pairHourCounts(pool);
-    const digests = await pool.query<{ id: string; request_cursor: string | null; source_hour: string; market_count: number }>(
-      `SELECT id, request_cursor, extract(epoch FROM source_hour)::bigint AS source_hour, market_count
+    const digests = await pool.query<{ id: string; source_hour: string; market_count: number }>(
+      `SELECT id, extract(epoch FROM source_hour)::bigint AS source_hour, market_count
        FROM raw_digests WHERE realm = $1 ORDER BY source_hour`,
       [REALM],
     );
@@ -73,17 +68,7 @@ export async function rebuild(pool: pg.Pool, options: RebuildOptions): Promise<R
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const { rows } = await client.query<{ payload: string }>('SELECT payload::text AS payload FROM raw_digests WHERE id = $1', [
-          digest.id,
-        ]);
-        const requestCursor = digest.request_cursor === null ? null : Number(digest.request_cursor);
-        const result = interpretResponse(200, rows[0]!.payload, requestCursor);
-        if (result.kind !== 'hour' || result.sourceHour !== sourceHour) {
-          throw new MalformedResponseError('Stored digest does not describe its hour', [
-            `expected ${hourIso(sourceHour)}, parsed ${result.kind === 'hour' ? hourIso(result.sourceHour) : result.kind}`,
-          ]);
-        }
-        const inserted = await storeMarkets(client, REALM, sourceHour, result.markets, options.itemNames);
+        const { inserted } = await parseStoredDigest(client, digest.id, sourceHour, options.itemNames);
         await client.query('UPDATE raw_digests SET parser_version = $1 WHERE id = $2', [PARSER_VERSION, digest.id]);
         await client.query('COMMIT');
 
@@ -118,7 +103,7 @@ export async function rebuild(pool: pg.Pool, options: RebuildOptions): Promise<R
       await compareWithMarketHours(pool, summary);
     }
     return summary;
-  });
+  }));
 }
 
 /** pair_hours row counts per PC hour (unix seconds). */

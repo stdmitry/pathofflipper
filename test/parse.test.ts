@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { parseStart } from '../src/exchange/hours.ts';
-import { interpretResponse, MalformedResponseError, UpstreamError } from '../src/exchange/parse.ts';
+import { interpretEnvelope, MalformedResponseError, parseMarkets, UpstreamError } from '../src/exchange/parse.ts';
 
 // Real response for GET /api/currency-exchange/1722027600 (PC, Settlers league era).
 const FIXTURE_CURSOR = 1722027600;
@@ -40,77 +40,84 @@ function problemsOf(fn: () => unknown): string[] {
   assert.fail('expected a MalformedResponseError');
 }
 
-describe('interpretResponse', () => {
+describe('interpretEnvelope', () => {
   it('accepts the real fixture and maps it to the requested hour', () => {
-    const { markets: records, ...result } = interpretResponse(200, fixtureBody, FIXTURE_CURSOR) as Extract<
-      ReturnType<typeof interpretResponse>,
-      { kind: 'hour' }
-    >;
-    const markets = JSON.parse(fixtureBody).markets as { volume_traded: Record<string, number> }[];
-    assert.equal(records.length, 232);
-    assert.deepEqual(result, {
+    assert.deepEqual(interpretEnvelope(200, fixtureBody, FIXTURE_CURSOR), {
       kind: 'hour',
       sourceHour: FIXTURE_CURSOR,
       nextCursor: FIXTURE_CURSOR + 3600,
       marketCount: 232,
-      activeMarketCount: markets.filter((m) => Object.values(m.volume_traded).some((v) => v !== 0)).length,
       skippedHours: 0,
     });
   });
 
   it('derives the source hour from next_change_id when requesting the earliest history', () => {
-    const result = interpretResponse(200, page(FIXTURE_CURSOR, [market()]), null);
+    const result = interpretEnvelope(200, page(FIXTURE_CURSOR, [market()]), null);
     assert.equal(result.kind, 'hour');
     assert.equal(result.kind === 'hour' && result.sourceHour, FIXTURE_CURSOR - 3600);
   });
 
   it('accepts an hour with no markets', () => {
-    const result = interpretResponse(200, page(FIXTURE_CURSOR + 3600, []), FIXTURE_CURSOR);
+    const result = interpretEnvelope(200, page(FIXTURE_CURSOR + 3600, []), FIXTURE_CURSOR);
     assert.equal(result.kind === 'hour' && result.marketCount, 0);
   });
 
   it('reports skipped hours when the cursor jumps ahead', () => {
-    const result = interpretResponse(200, page(FIXTURE_CURSOR + 3 * 3600, [market()]), FIXTURE_CURSOR);
+    const result = interpretEnvelope(200, page(FIXTURE_CURSOR + 3 * 3600, [market()]), FIXTURE_CURSOR);
     assert.equal(result.kind === 'hour' && result.skippedHours, 2);
   });
 
-  it('retains unknown item ids and extra fields', () => {
-    const result = interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market({ new_field: true })]), FIXTURE_CURSOR);
-    assert.equal(result.kind === 'hour' && result.marketCount, 1);
+  it('does not validate market records', () => {
+    const body = page(FIXTURE_CURSOR + 3600, [market({ volume_traded: 1.5 }), 'not a market']);
+    const result = interpretEnvelope(200, body, FIXTURE_CURSOR);
+    assert.equal(result.kind === 'hour' && result.marketCount, 2);
   });
 
   it('treats the unpublished current hour (404 with the same cursor) as caught up', () => {
     const body = page(FIXTURE_CURSOR, []);
-    assert.deepEqual(interpretResponse(404, body, FIXTURE_CURSOR), { kind: 'caught-up', nextCursor: FIXTURE_CURSOR });
-    assert.deepEqual(interpretResponse(200, body, FIXTURE_CURSOR), { kind: 'caught-up', nextCursor: FIXTURE_CURSOR });
+    assert.deepEqual(interpretEnvelope(404, body, FIXTURE_CURSOR), { kind: 'caught-up', nextCursor: FIXTURE_CURSOR });
+    assert.deepEqual(interpretEnvelope(200, body, FIXTURE_CURSOR), { kind: 'caught-up', nextCursor: FIXTURE_CURSOR });
   });
 
   it('rejects an unchanged cursor that still carries markets instead of looping', () => {
-    assert.match(problemsOf(() => interpretResponse(200, page(FIXTURE_CURSOR, [market()]), FIXTURE_CURSOR))[0]!, /equals/);
+    assert.match(problemsOf(() => interpretEnvelope(200, page(FIXTURE_CURSOR, [market()]), FIXTURE_CURSOR))[0]!, /equals/);
   });
 
   it('raises UpstreamError for API error bodies', () => {
     const body = JSON.stringify({ error: { code: 1, message: 'Resource not found' } });
-    assert.throws(() => interpretResponse(404, body, FIXTURE_CURSOR + 1), UpstreamError);
+    assert.throws(() => interpretEnvelope(404, body, FIXTURE_CURSOR + 1), UpstreamError);
   });
 
   it('rejects bodies that are not JSON objects', () => {
-    assert.throws(() => interpretResponse(200, '<html>maintenance</html>', FIXTURE_CURSOR), MalformedResponseError);
-    assert.throws(() => interpretResponse(200, '[]', FIXTURE_CURSOR), MalformedResponseError);
+    assert.throws(() => interpretEnvelope(200, '<html>maintenance</html>', FIXTURE_CURSOR), MalformedResponseError);
+    assert.throws(() => interpretEnvelope(200, '[]', FIXTURE_CURSOR), MalformedResponseError);
   });
 
   it('rejects missing, unaligned, or backwards cursors', () => {
-    assert.throws(() => interpretResponse(200, page(undefined, []), FIXTURE_CURSOR), MalformedResponseError);
-    assert.throws(() => interpretResponse(200, page(FIXTURE_CURSOR + 60, []), FIXTURE_CURSOR), MalformedResponseError);
-    assert.throws(() => interpretResponse(200, page('1722031200', []), FIXTURE_CURSOR), MalformedResponseError);
-    assert.throws(() => interpretResponse(200, page(FIXTURE_CURSOR - 3600, []), FIXTURE_CURSOR), MalformedResponseError);
-    assert.throws(() => interpretResponse(200, JSON.stringify({ next_change_id: FIXTURE_CURSOR + 3600 }), FIXTURE_CURSOR));
+    assert.throws(() => interpretEnvelope(200, page(undefined, []), FIXTURE_CURSOR), MalformedResponseError);
+    assert.throws(() => interpretEnvelope(200, page(FIXTURE_CURSOR + 60, []), FIXTURE_CURSOR), MalformedResponseError);
+    assert.throws(() => interpretEnvelope(200, page('1722031200', []), FIXTURE_CURSOR), MalformedResponseError);
+    assert.throws(() => interpretEnvelope(200, page(FIXTURE_CURSOR - 3600, []), FIXTURE_CURSOR), MalformedResponseError);
+    assert.throws(() => interpretEnvelope(200, JSON.stringify({ next_change_id: FIXTURE_CURSOR + 3600 }), FIXTURE_CURSOR));
+  });
+});
+
+describe('parseMarkets', () => {
+  it('accepts every market of the real fixture', () => {
+    assert.equal(parseMarkets(fixtureBody).length, 232);
+  });
+
+  it('retains unknown item ids and ignores extra fields', () => {
+    assert.deepEqual(parseMarkets(page(FIXTURE_CURSOR + 3600, [market({ new_field: true })]))[0]?.pair, [A, B]);
+  });
+
+  it('rejects a payload without a markets array', () => {
+    assert.throws(() => parseMarkets(JSON.stringify({ next_change_id: FIXTURE_CURSOR })), MalformedResponseError);
   });
 
   it('lists every malformed market record', () => {
     const problems = problemsOf(() =>
-      interpretResponse(
-        200,
+      parseMarkets(
         page(FIXTURE_CURSOR + 3600, [
           market({ league: '' }),
           market({ market_pair: [A] }),
@@ -119,7 +126,6 @@ describe('interpretResponse', () => {
           market({ league: 'Ruthless', highest_ratio: { [A]: 1, [B]: 2, extra: 3 } }),
           'not a market',
         ]),
-        FIXTURE_CURSOR,
       ),
     );
     assert.equal(problems.length, 6);
@@ -132,8 +138,8 @@ describe('interpretResponse', () => {
   });
 
   it('returns each market with its values in market_pair order', () => {
-    const result = interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market()]), FIXTURE_CURSOR);
-    assert.deepEqual(result.kind === 'hour' && result.markets, [
+    const result = parseMarkets(page(FIXTURE_CURSOR + 3600, [market()]));
+    assert.deepEqual(result, [
       {
         league: 'Standard',
         pair: [A, B],
@@ -150,23 +156,21 @@ describe('interpretResponse', () => {
 
   it('accepts integers up to 2^53 - 1 and rejects fractions and larger values', () => {
     const max = Number.MAX_SAFE_INTEGER;
-    const ok = interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market({ volume_traded: { [A]: max, [B]: -1 } })]), FIXTURE_CURSOR);
-    assert.deepEqual(ok.kind === 'hour' && ok.markets[0]?.values.volume_traded, [max, -1]);
+    const ok = parseMarkets(page(FIXTURE_CURSOR + 3600, [market({ volume_traded: { [A]: max, [B]: -1 } })]));
+    assert.deepEqual(ok[0]?.values.volume_traded, [max, -1]);
 
     const body = `{"next_change_id":${FIXTURE_CURSOR + 3600},"markets":[${JSON.stringify(market()).replace(
       /"lowest_ratio":\{[^}]*\}/,
       `"lowest_ratio":{"${A}":1.5,"${B}":9007199254740993}`,
     )}]}`;
-    const problems = problemsOf(() => interpretResponse(200, body, FIXTURE_CURSOR));
+    const problems = problemsOf(() => parseMarkets(body));
     assert.equal(problems.length, 2);
     assert.match(problems[0]!, /lowest_ratio\[.*CurrencyRerollRare\] must be an integer.*1\.5/);
     assert.match(problems[1]!, /lowest_ratio\[.*UnknownFutureCurrency\] must be an integer/);
   });
 
   it('requires market_id to be the two market_pair ids joined by |', () => {
-    const problems = problemsOf(() =>
-      interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market({ market_id: `${B}|${A}` })]), FIXTURE_CURSOR),
-    );
+    const problems = problemsOf(() => parseMarkets(page(FIXTURE_CURSOR + 3600, [market({ market_id: `${B}|${A}` })])));
     assert.match(problems[0]!, /market_id must be/);
   });
 
@@ -176,12 +180,12 @@ describe('interpretResponse', () => {
       market_id: `${B}|${A}`,
       market_pair: [B, A],
     });
-    const problems = problemsOf(() => interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market(), reversed]), FIXTURE_CURSOR));
+    const problems = problemsOf(() => parseMarkets(page(FIXTURE_CURSOR + 3600, [market(), reversed])));
     assert.match(problems[0]!, /markets\[1\]\.market_pair .* reverse order/);
   });
 
   it('rejects duplicate league/market pairs', () => {
-    const problems = problemsOf(() => interpretResponse(200, page(FIXTURE_CURSOR + 3600, [market(), market()]), FIXTURE_CURSOR));
+    const problems = problemsOf(() => parseMarkets(page(FIXTURE_CURSOR + 3600, [market(), market()])));
     assert.match(problems[0]!, /duplicates/);
   });
 });

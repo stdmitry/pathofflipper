@@ -4,10 +4,10 @@ import { ConfigError, parseNonNegativeInt, parsePositiveInt, parseRealm, require
 import { ExchangeClient } from '../exchange/client.ts';
 import { defaultStart, hourIso, parseStart } from '../exchange/hours.ts';
 import { ingest } from '../ingest.ts';
-import { loadItemNames } from '../items.ts';
 import { createLogger, errorMessage } from '../log.ts';
 
 const USAGE = `Fetch completed hours of PoE 1 PC currency exchange history into PostgreSQL.
+Stores raw responses only; run npm run parse afterwards to fill pair_hours.
 
 Usage: npm run fetch -- [options]
 
@@ -69,7 +69,6 @@ async function main(): Promise<void> {
       maxHours,
       start,
       pauseMs,
-      itemNames: await loadItemNames(),
       shouldStop: () => stopRequested,
       logger,
     });
@@ -77,8 +76,6 @@ async function main(): Promise<void> {
       realm,
       stop_reason: summary.stopReason,
       hours_stored: summary.hoursStored,
-      markets_inserted: summary.marketsInserted,
-      markets_already_stored: summary.marketsAlreadyStored,
       next_hour: summary.nextCursor === null ? undefined : hourIso(summary.nextCursor),
     });
   } finally {
