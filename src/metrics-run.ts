@@ -6,6 +6,7 @@ import { withMetricsLock } from './ingest.ts';
 import { silentLogger, type Logger } from './log.ts';
 import {
   CALC_VERSION,
+  flipGold,
   isEligible,
   rankMarkets,
   rankScore,
@@ -79,6 +80,7 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
     const responseMarkets = await loadResponses(pool, first, asOfHour);
     const leagueMarkets = await loadLeagueMarkets(pool, first, asOfHour);
     const markets = await loadQuoteMarkets(pool, quoteId, first, asOfHour);
+    const fees = await loadGoldFees(pool);
     for (const hour of hours) {
       const count = responseMarkets.get(hour);
       if (count === undefined) summary.windowHours.missing++;
@@ -86,10 +88,17 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
       else summary.windowHours.parsed++;
     }
 
-    const results: { leagueId: number; pairId: number; windowHours: number; metrics: WindowMetrics; rank?: number }[] = [];
+    const results: {
+      leagueId: number;
+      pairId: number;
+      baseId: number;
+      windowHours: number;
+      metrics: WindowMetrics;
+      rank?: number;
+    }[] = [];
     for (const windowHours of WINDOWS) {
       const windowStart = hours.length - windowHours;
-      const byLeague = new Map<number, { key: number; sortKey: string; metrics: WindowMetrics }[]>();
+      const byLeague = new Map<number, { key: number; baseId: number; sortKey: string; metrics: WindowMetrics }[]>();
       for (const market of markets.values()) {
         const marketHours: MarketHour[] = hours.slice(windowStart).map((hour) => {
           const row = market.rows.get(hour);
@@ -102,13 +111,18 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
           return record ? { status, quoted: quoteHour(record, String(quoteId)) } : { status };
         });
         const list = byLeague.get(market.leagueId) ?? [];
-        list.push({ key: market.pairId, sortKey: String(market.pairId), metrics: windowMetrics(marketHours) });
+        list.push({
+          key: market.pairId,
+          baseId: market.baseId,
+          sortKey: String(market.pairId),
+          metrics: windowMetrics(marketHours),
+        });
         byLeague.set(market.leagueId, list);
       }
       for (const [leagueId, list] of byLeague) {
         const ranks = rankMarkets(list, quoteItem.minPerHour);
-        for (const { key, metrics } of list) {
-          results.push({ leagueId, pairId: key, windowHours, metrics, rank: ranks.get(key) });
+        for (const { key, baseId, metrics } of list) {
+          results.push({ leagueId, pairId: key, baseId, windowHours, metrics, rank: ranks.get(key) });
           if (isEligible(metrics, quoteItem.minPerHour)) summary.eligible++;
         }
       }
@@ -130,29 +144,35 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
          VALUES ($1, $2, $3, to_timestamp($4)) RETURNING id`,
         [REALM, quoteId, CALC_VERSION, asOfHour],
       );
-      const rows = results.map(({ leagueId, pairId, windowHours, metrics, rank }) => ({
-        league_id: leagueId,
-        pair_id: pairId,
-        window_hours: windowHours,
-        covered_hours: metrics.coveredHours,
-        traded_hours: metrics.tradedHours,
-        base_volume: String(metrics.baseVolume),
-        quote_volume: String(metrics.quoteVolume),
-        ...fraction('rate', metrics.rate),
-        ...fraction('low_rate', metrics.lowRate),
-        ...fraction('high_rate', metrics.highRate),
-        volatility: metrics.volatility,
-        rank_score: rankScore(metrics),
-        activity_rank: rank ?? null,
-      }));
+      const rows = results.map(({ leagueId, pairId, baseId, windowHours, metrics, rank }) => {
+        const gold = flipGold(metrics, fees.get(baseId) ?? null, fees.get(quoteId) ?? null);
+        return {
+          league_id: leagueId,
+          pair_id: pairId,
+          window_hours: windowHours,
+          covered_hours: metrics.coveredHours,
+          traded_hours: metrics.tradedHours,
+          base_volume: String(metrics.baseVolume),
+          quote_volume: String(metrics.quoteVolume),
+          ...fraction('rate', metrics.rate),
+          ...fraction('low_rate', metrics.lowRate),
+          ...fraction('high_rate', metrics.highRate),
+          volatility: metrics.volatility,
+          rank_score: rankScore(metrics),
+          gold_per_flip: gold?.goldPerFlip ?? null,
+          quote_per_kgold: gold?.quotePerKgold ?? null,
+          activity_rank: rank ?? null,
+        };
+      });
       await client.query(
         `INSERT INTO market_metrics (run_id, league_id, pair_id, window_hours, covered_hours, traded_hours, base_volume,
            quote_volume, rate_num, rate_den, low_rate_num, low_rate_den, high_rate_num, high_rate_den, volatility,
-           rank_score, activity_rank)
+           rank_score, gold_per_flip, quote_per_kgold, activity_rank)
          SELECT $1, x.* FROM jsonb_to_recordset($2::jsonb) AS x(league_id integer, pair_id integer,
            window_hours smallint, covered_hours smallint, traded_hours smallint, base_volume bigint, quote_volume bigint,
            rate_num bigint, rate_den bigint, low_rate_num bigint, low_rate_den bigint, high_rate_num bigint,
-           high_rate_den bigint, volatility double precision, rank_score double precision, activity_rank integer)`,
+           high_rate_den bigint, volatility double precision, rank_score double precision, gold_per_flip double precision, quote_per_kgold double precision,
+           activity_rank integer)`,
         [run.rows[0]!.id, JSON.stringify(rows)],
       );
       await client.query('COMMIT');
@@ -209,6 +229,8 @@ async function loadLeagueMarkets(pool: pg.Pool, first: number, last: number): Pr
 interface QuoteMarket {
   leagueId: number;
   pairId: number;
+  /** The pair's other item, priced in the quote. */
+  baseId: number;
   rows: Map<number, PairHourRow>;
 }
 
@@ -230,12 +252,19 @@ async function loadQuoteMarkets(pool: pg.Pool, quoteId: number, first: number, l
     const key = `${row.league_id}:${row.pair_id}`;
     let market = markets.get(key);
     if (!market) {
-      market = { leagueId: row.league_id, pairId: row.pair_id, rows: new Map() };
+      const baseId = row.item_a_id === quoteId ? row.item_b_id : row.item_a_id;
+      market = { leagueId: row.league_id, pairId: row.pair_id, baseId, rows: new Map() };
       markets.set(key, market);
     }
     market.rows.set(Number(row.hour), row);
   }
   return markets;
+}
+
+/** Gold fee per item id, for items whose fee is known (npm run gold-fees). */
+async function loadGoldFees(pool: pg.Pool): Promise<Map<number, number>> {
+  const { rows } = await pool.query<{ id: number; gold_fee: number }>('SELECT id, gold_fee FROM items WHERE gold_fee IS NOT NULL');
+  return new Map(rows.map((row) => [row.id, row.gold_fee]));
 }
 
 /** A pair_hours row as a MarketRecord keyed by item id. Stored values fit in ±2^53, so Number is exact. */

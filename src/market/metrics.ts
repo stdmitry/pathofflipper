@@ -5,7 +5,7 @@ import { compareRational, isCovered, type HourStatus, type QuotedHour, type Rati
  * Market activity metrics over trailing windows. The definitions, thresholds and their rationale are documented in
  * specs/market-metrics.md. Bump CALC_VERSION whenever a definition or threshold changes.
  */
-export const CALC_VERSION = 2;
+export const CALC_VERSION = 3;
 
 export const WINDOWS = [1, 6, 24] as const;
 export type WindowHours = (typeof WINDOWS)[number];
@@ -145,6 +145,26 @@ export function rankMarkets<K>(
       (x.sortKey < y.sortKey ? -1 : x.sortKey > y.sortKey ? 1 : 0),
   );
   return new Map(eligible.map((m, index) => [m.key, index + 1]));
+}
+
+export interface FlipGold {
+  /** Gold to buy one base unit and sell it again. */
+  goldPerFlip: number;
+  /** Quote units earned per 1,000 gold on that round trip, buying at the low and selling at the high. */
+  quotePerKgold: number | null;
+}
+
+/**
+ * Gold for one round trip of a base unit at the window's prices. An order costs the wanted item's fee per unit
+ * wanted: buying wants 1 base unit (baseFee), selling at the high wants `high` quote units (quoteFee × high).
+ * The margin (high − low) uses the range extremes, which are not a capturable spread, so this is an upper bound.
+ */
+export function flipGold(m: WindowMetrics, baseFee: number | null, quoteFee: number | null): FlipGold | null {
+  if (!m.lowRate || !m.highRate || baseFee === null || quoteFee === null) return null;
+  const low = toNumber(m.lowRate);
+  const high = toNumber(m.highRate);
+  const goldPerFlip = baseFee + quoteFee * high;
+  return { goldPerFlip, quotePerKgold: goldPerFlip > 0 ? ((high - low) / goldPerFlip) * 1000 : null };
 }
 
 /** Hours between the end of the newest source hour and `now`. Hour H is complete at H + 1h. */

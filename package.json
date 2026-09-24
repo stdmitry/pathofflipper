@@ -16,6 +16,7 @@
     "parse": "node --env-file-if-exists=.env src/cli/parse.ts",
     "rebuild": "node --env-file-if-exists=.env src/cli/rebuild.ts",
     "item-names": "node --env-file-if-exists=.env src/cli/item-names.ts",
+    "gold-fees": "node --env-file-if-exists=.env src/cli/gold-fees.ts",
     "check-semantics": "node --env-file-if-exists=.env src/cli/check-semantics.ts",
     "metrics": "node --env-file-if-exists=.env src/cli/metrics.ts",
     "serve": "node --env-file-if-exists=.env src/cli/serve.ts",

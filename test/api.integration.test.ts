@@ -170,6 +170,24 @@ describe('read API (PostgreSQL)', { skip }, () => {
       assert.equal((await get(`/api/markets/${encodeMarketId(DIVINE)}/history?league=Mirage&quote=divine`)).status, 404);
     });
 
+    it('returns gold figures in the list and the history summary', async () => {
+      await pool.query(`UPDATE items SET gold_fee = CASE metadata_path WHEN $1 THEN 15 WHEN $2 THEN 250 END`, [
+        'Metadata/Items/Currency/CurrencyRerollRare',
+        DIVINE,
+      ]);
+      await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
+      const list = await get('/api/markets?league=Mirage&window=1h');
+      const divine = list.body.data.find((m: Json) => m.item.path === DIVINE);
+      assert.ok(Math.abs(divine.gold_per_flip - (250 + 15 * divine.high_rate.value)) < 1e-6);
+      assert.ok(divine.quote_per_1k_gold > 0);
+      assert.ok(list.body.meta.units.gold_per_flip);
+
+      const history = await get(`/api/markets/${encodeMarketId(DIVINE)}/history?league=Mirage`);
+      const summary = history.body.data.summary;
+      assert.deepEqual(summary.gold_fees, { base: 250, quote: 15 });
+      assert.ok(Math.abs(summary.gold_per_flip - (250 + 15 * summary.high_rate.value)) < 1e-6);
+    });
+
     it('returns one point per hour with explicit gaps', async () => {
       const { status, body } = await get(`/api/markets/${encodeMarketId(DIVINE)}/history?league=Mirage`);
       assert.equal(status, 200);

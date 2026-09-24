@@ -38,6 +38,9 @@ const market = {
   low_rate: rate(300),
   high_rate: rate(345),
   volatility: 0.0101,
+  // Divine fee 250 + Chaos fee 15 × 345 = 5,425 gold; (345 − 300) / 5,425 × 1,000 = 8.29 Chaos per 1k gold.
+  gold_per_flip: 5425,
+  quote_per_1k_gold: 8.2949,
 };
 
 describe('number formatting', () => {
@@ -96,6 +99,8 @@ describe('marketRow', () => {
       high: '345.0c',
       range: '45.0c',
       score: '2M', // (345 − 300) / 300 × 13,437,690
+      gold: '5425',
+      perGold: '8.3c',
       turnover: '13.4Mc/h',
       units: '40.9k/h',
       traded: '12/18 h',
@@ -110,6 +115,8 @@ describe('marketRow', () => {
     const row = marketRow({ ...market, rank: null, eligible: false, covered_hours: 0, traded_hours: 0, coverage: 0,
       turnover_per_hour: null, units_per_hour: null, rate: null, low_rate: null, high_rate: null, volatility: null });
     assert.deepEqual([row.rank, row.low, row.high, row.range, row.turnover, row.units, row.volatility], [DASH, DASH, DASH, DASH, DASH, DASH, DASH]);
+    const noFees = marketRow({ ...market, gold_per_flip: null, quote_per_1k_gold: null });
+    assert.deepEqual([noFees.gold, noFees.perGold], [DASH, DASH]);
     assert.equal(row.lowCoverage, true);
   });
 });

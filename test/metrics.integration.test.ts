@@ -173,6 +173,25 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
     assert.equal(rows[0]!.activity_rank, 1, 'tens of thousands of Divines an hour clear the 0.3 div/h minimum');
   });
 
+  it('stores the gold for one flip from the items\' fees', async () => {
+    await loadMirageHours(pool);
+    await pool.query(`UPDATE items SET gold_fee = CASE metadata_path WHEN $1 THEN 15 WHEN $2 THEN 250 END`, [CHAOS_PATH, DIVINE]);
+    await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
+    const { rows } = await pool.query<{ high: string; low: string; gold: number; per_kgold: number; unpriced: string }>(
+      `SELECT m.high_rate_num::numeric / m.high_rate_den AS high, m.low_rate_num::numeric / m.low_rate_den AS low,
+         m.gold_per_flip AS gold, m.quote_per_kgold AS per_kgold,
+         (SELECT count(*) FROM market_metrics WHERE traded_hours > 0 AND gold_per_flip IS NULL) AS unpriced
+       FROM market_metrics m JOIN pairs p ON p.id = m.pair_id JOIN items i ON i.id IN (p.item_a_id, p.item_b_id)
+       WHERE i.metadata_path = $1 AND m.window_hours = 1`,
+      [DIVINE],
+    );
+    const [high, low] = [Number(rows[0]!.high), Number(rows[0]!.low)];
+    // Buying a Divine wants 1 Divine (250 gold); selling it at the high wants `high` Chaos (15 gold each).
+    assert.ok(Math.abs(rows[0]!.gold - (250 + 15 * high)) < 1e-6);
+    assert.ok(Math.abs(rows[0]!.per_kgold - ((high - low) / (250 + 15 * high)) * 1000) < 1e-6);
+    assert.ok(Number(rows[0]!.unpriced) > 0, 'items without a known fee have no gold figures');
+  });
+
   it('skips private leagues', async () => {
     await loadMirageHours(pool);
     // One more hour with the same Chaos/Divine market in Mirage and in a private league.

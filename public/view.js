@@ -5,7 +5,8 @@
  * @typedef {{ num: string, den: string, value: number }} Rate
  * @typedef {{ name: string, path: string, category: string, named: boolean }} Item
  * @typedef {{
- *   id: string, item: Item, rank: number | null, score?: number | null, eligible: boolean, window_hours: number,
+ *   id: string, item: Item, rank: number | null, score?: number | null, gold_per_flip?: number | null,
+ *   quote_per_1k_gold?: number | null, eligible: boolean, window_hours: number,
  *   covered_hours: number,
  *   traded_hours: number, coverage: number, persistence: number, turnover_per_hour: number | null,
  *   units_per_hour: number | null, volume: { quote: string, base: string }, rate: Rate | null,
@@ -142,6 +143,12 @@ export function marketRow(m, quote = 'chaos') {
     high: rateText(m.high_rate, quote),
     range: differenceText(m.low_rate, m.high_rate, quote),
     score: compact(scoreOf(m)),
+    // Gold to buy one unit at the low and sell it at the high, and what that round trip earns per 1,000 gold.
+    gold: compact(m.gold_per_flip),
+    perGold:
+      m.quote_per_1k_gold === null || m.quote_per_1k_gold === undefined
+        ? DASH
+        : `${m.quote_per_1k_gold.toFixed(1)}${QUOTE_UNITS[quote].price}`,
     turnover: m.turnover_per_hour === null ? DASH : `${compact(m.turnover_per_hour)}${QUOTE_UNITS[quote].perHour}`,
     units: m.units_per_hour === null ? DASH : `${compact(m.units_per_hour)}/h`,
     traded: `${m.traded_hours}/${m.covered_hours} h`,
@@ -199,7 +206,8 @@ export function statusCounts(statuses) {
 /**
  * @typedef {{
  *   league: string, quote: Quote, window: '1h' | '6h' | '24h', scope: 'eligible' | 'all',
- *   sort: 'rank' | 'score' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'low' | 'high' | 'range' | 'name',
+ *   sort: 'rank' | 'score' | 'gold' | 'per_gold' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'low' | 'high'
+ *     | 'range' | 'name',
  *   order: '' | 'asc' | 'desc',
  *   q: string, offset: number, market: string, history: '24h' | '7d' | '30d'
  * }} State
@@ -223,7 +231,7 @@ const CHOICES = /** @type {Record<string, readonly string[]>} */ ({
   quote: ['chaos', 'divine'],
   window: ['1h', '6h', '24h'],
   scope: ['eligible', 'all'],
-  sort: ['rank', 'score', 'turnover', 'units', 'persistence', 'volatility', 'low', 'high', 'range', 'name'],
+  sort: ['rank', 'score', 'gold', 'per_gold', 'turnover', 'units', 'persistence', 'volatility', 'low', 'high', 'range', 'name'],
   order: ['', 'asc', 'desc'],
   history: ['24h', '7d', '30d'],
 });

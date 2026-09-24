@@ -167,6 +167,7 @@ describe('rebuild and the market_hours drop (PostgreSQL)', { skip }, () => {
       '0006_league_hours.sql',
       '0007_private_leagues.sql',
       '0008_rank_score.sql',
+      '0009_gold_fees.sql',
     ]);
     // 0006 fills league_hours from the rebuilt pair_hours.
     assert.equal(await count('league_hours'), 2 * FIXTURE.leagues);

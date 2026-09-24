@@ -4,7 +4,7 @@ import { drawHistory } from './chart.js';
 import * as view from './view.js';
 
 const PAGE_SIZE = 50;
-const COLUMNS = 11;
+const COLUMNS = 13;
 
 /** @param {string} id */
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -158,6 +158,8 @@ function renderRows(rows) {
         el('td', { class: 'num strong' }, r.high),
         el('td', { class: 'num' }, r.range),
         el('td', { class: 'num strong' }, r.score),
+        el('td', { class: 'num' }, r.gold),
+        el('td', { class: 'num' }, r.perGold),
         el('td', { class: 'num' }, r.turnover),
         el('td', { class: 'num' }, r.units),
         el('td', { class: 'num' }, r.traded),
@@ -246,6 +248,8 @@ function renderDetail(history) {
     ['High', row.high, 'Highest price paid in a trade during this window'],
     ['High − Low', row.range, 'Highest minus lowest price paid; not a spread you can capture'],
     ['Score', row.score, `(High − Low) / Low × ${unit.column}`],
+    ['Gold/flip', row.gold, 'Gold to buy one unit at Low and sell it at High'],
+    ['Per 1k gold', row.perGold, 'What that flip earns per 1,000 gold; an upper bound'],
     [unit.column, row.turnover, `${unit.name} traded per hour with data`],
     ['Units/h', row.units, `${item.name} traded per hour with data`],
     ['Traded', row.traded, 'Hours with trades / hours with data'],

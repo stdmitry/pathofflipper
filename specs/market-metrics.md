@@ -1,6 +1,6 @@
 # Market metrics
 
-Status: calculation version 2, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4); version 2 changed the ranking score). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
+Status: calculation version 3, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4); version 2 changed the ranking score, version 3 added gold). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
 
 **The rank orders research candidates; it is not a profit estimate.** A high rank means a wide traded price range relative to the price, in a market where a lot of Chaos changes hands steadily and the data is complete. The range comes from executed trades at different moments, not from a spread anyone could capture, so a high rank does not mean a flip will fill or pay. Estimating profit over time is gated on [#7](https://github.com/stdmitry/pathofflipper/issues/7).
 
@@ -67,6 +67,21 @@ How the defaults were checked, on Mirage's 24h window ending 2026-04-15 12:00 UT
 - Under version 1, the top ranks were Divine Orb (328.6 c, range 300–345, volatility 0.010), The Black Barya, Valdo's Puzzle Box, Horned Scarab of Bloodlines and others. Stacked Deck (rank 7) shows why the range is not a spread: a 0.02 c low against a 4.06 c weighted rate.
 
 Chaos turnover depends on each league's economy, so re-check these distributions at league start. Changing a threshold or definition means bumping `CALC_VERSION`.
+
+## Gold
+
+Placing an exchange order costs gold, which cannot be traded, so gold is reported next to the quote-currency figures and never converted into them.
+
+**Fees.** The game's `CurrencyExchange` table gives each exchange item a `GoldPurchaseFee` (e.g. Chaos Orb 15, Divine Orb 250, Mirror of Kalandra 25,000; median 150 over 1,126 items). [`data/gold-fees.json`](../data/gold-fees.json) vendors it from the RePoE fork's CSV export ([repoe-fork/dat-export](https://github.com/repoe-fork/dat-export)), with the game version it came from (3.29.3.3). `npm run gold-fees` copies it into `items.gold_fee`; `-- --download` refreshes the file first. Refresh once per league or patch, review the diff and commit it, then run `npm run metrics`.
+
+**Rule.** An order's gold depends only on the item it *wants*: changing the offered item leaves the cost unchanged (checked in game, 2026-09-24). The cost is taken to be the wanted item's fee × the quantity wanted, which fits guides saying it scales in proportion to the amount but has not been checked in game.
+
+**Per market** (`market_metrics.gold_per_flip`, `quote_per_kgold`), for one base unit at the window's prices:
+
+> gold per flip = fee(base) × 1 + fee(quote) × high  
+> quote per 1k gold = (high − low) / gold per flip × 1,000
+
+Buying one unit wants 1 base unit, and selling it at the high wants `high` quote units. For expensive items the quote side dominates: flipping one Divine at 300c → 380c costs 250 + 15 × 380 = 5,950 gold for at most 80 Chaos, about 13.4 Chaos per 1,000 gold. Both figures use the range extremes, so the margin is an upper bound that one odd trade can inflate. On Allflame's 24h window the top Chaos markets by this measure were tattoos and fossils with lows of 1–3 Chaos against highs of 20–145. Items without a fee have NULL gold figures.
 
 ## Storage and runs
 

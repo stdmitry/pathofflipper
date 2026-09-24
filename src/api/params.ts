@@ -17,7 +17,7 @@ export class InvalidParameterError extends Error {
 export const QUOTES: Record<Quote, string> = { chaos: QUOTE_ITEMS.chaos.path, divine: QUOTE_ITEMS.divine.path };
 export type { Quote };
 
-export const MARKET_SORTS = ['rank', 'turnover', 'units', 'persistence', 'volatility', 'rate', 'low', 'high', 'range', 'score', 'name'] as const;
+export const MARKET_SORTS = ['rank', 'turnover', 'units', 'persistence', 'volatility', 'rate', 'low', 'high', 'range', 'score', 'gold', 'per_gold', 'name'] as const;
 export type MarketSort = (typeof MARKET_SORTS)[number];
 
 /** History windows in hours; 30 days bounds a response to 720 points. */
