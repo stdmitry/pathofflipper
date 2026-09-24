@@ -115,7 +115,7 @@ async function loadMarkets() {
     renderRows(body.data.map((/** @type {view.Market} */ m) => view.marketRow(m, state.quote)));
     $('table-meta').textContent =
       `${state.window} window ending ${view.hourText(body.meta.as_of_hour)} · calculation v${body.meta.calc_version} · ` +
-      `ranked by score = (High − Low) / Low × ${unit.column}, among markets with ≥75% coverage, trades in ≥50% of ` +
+      `ranked by score = (High − Low) / Low × ${unit.column} × Per 1k gold, among markets with ≥75% coverage, trades in ≥50% of ` +
       `hours and ≥${unit.minPerHour}`;
   } catch (error) {
     if (isAbort(error)) return;
@@ -247,7 +247,7 @@ function renderDetail(history) {
     ['Low', row.low, 'Lowest price paid in a trade during this window'],
     ['High', row.high, 'Highest price paid in a trade during this window'],
     ['High − Low', row.range, 'Highest minus lowest price paid; not a spread you can capture'],
-    ['Score', row.score, `(High − Low) / Low × ${unit.column}`],
+    ['Score', row.score, `(High − Low) / Low × ${unit.column} × Per 1k gold`],
     ['Gold/flip', row.gold, 'Gold to buy one unit at Low and sell it at High'],
     ['Per 1k gold', row.perGold, 'What that flip earns per 1,000 gold; an upper bound'],
     [unit.column, row.turnover, `${unit.name} traded per hour with data`],

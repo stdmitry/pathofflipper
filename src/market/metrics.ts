@@ -5,7 +5,7 @@ import { compareRational, isCovered, type HourStatus, type QuotedHour, type Rati
  * Market activity metrics over trailing windows. The definitions, thresholds and their rationale are documented in
  * specs/market-metrics.md. Bump CALC_VERSION whenever a definition or threshold changes.
  */
-export const CALC_VERSION = 3;
+export const CALC_VERSION = 4;
 
 export const WINDOWS = [1, 6, 24] as const;
 export type WindowHours = (typeof WINDOWS)[number];
@@ -116,31 +116,33 @@ export function isEligible(m: WindowMetrics, minQuotePerHour: number = ELIGIBILI
 }
 
 /**
- * The ranking score: the window's relative price range times its Chaos turnover,
- * (high − low) / low × quote per covered hour. Null without trades or coverage. The range comes from executed trades
- * and is not a spread anyone can capture, so the score orders research candidates; it is not a profit estimate.
+ * The ranking score: the window's relative price range, times its turnover, times what one flip earns per 1,000 gold:
+ * (high − low) / low × quote per covered hour × quote per 1k gold (see flipGold). Null without trades, coverage or
+ * a known gold figure. The range comes from executed trades and is not a spread anyone can capture, so the score
+ * orders research candidates; it is not a profit estimate.
  */
-export function rankScore(m: WindowMetrics): number | null {
+export function rankScore(m: WindowMetrics, quotePerKgold: number | null): number | null {
   const turnover = quotePerHour(m);
-  if (!m.lowRate || !m.highRate || turnover === null) return null;
+  if (!m.lowRate || !m.highRate || turnover === null || quotePerKgold === null) return null;
   // (h/l) − 1 with h = hn/hd and l = ln/ld, as one exact fraction before converting.
   const num = m.highRate.num * m.lowRate.den - m.lowRate.num * m.highRate.den;
   const den = m.highRate.den * m.lowRate.num;
-  return (Number(num) / Number(den)) * turnover;
+  return (Number(num) / Number(den)) * turnover * quotePerKgold;
 }
 
 /**
- * Ranks for one league and window: eligible markets by rankScore, highest first, then turnover, then key for a stable
- * order. Ineligible markets get no rank.
+ * Ranks for one league and window: eligible markets by score (rankScore), highest first, then turnover, then key for
+ * a stable order. Eligible markets without a score (no known gold fee) rank after all scored ones. Ineligible markets
+ * get no rank.
  */
 export function rankMarkets<K>(
-  markets: { key: K; sortKey: string; metrics: WindowMetrics }[],
+  markets: { key: K; sortKey: string; metrics: WindowMetrics; score: number | null }[],
   minQuotePerHour: number = ELIGIBILITY.minQuotePerHour,
 ): Map<K, number> {
   const eligible = markets.filter((m) => isEligible(m.metrics, minQuotePerHour));
   eligible.sort(
     (x, y) =>
-      (rankScore(y.metrics) ?? 0) - (rankScore(x.metrics) ?? 0) ||
+      (y.score ?? -1) - (x.score ?? -1) ||
       (quotePerHour(y.metrics) ?? 0) - (quotePerHour(x.metrics) ?? 0) ||
       (x.sortKey < y.sortKey ? -1 : x.sortKey > y.sortKey ? 1 : 0),
   );

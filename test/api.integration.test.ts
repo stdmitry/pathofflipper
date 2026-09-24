@@ -87,6 +87,11 @@ describe('read API (PostgreSQL)', { skip }, () => {
   describe('with the Mirage hours and metrics as of H0+2h', () => {
     beforeEach(async () => {
       await loadMirageHours(pool);
+      // Gold fees of Chaos, Divine and Chromatic, as in the game data; the other items have none.
+      await pool.query(
+        `UPDATE items SET gold_fee = CASE metadata_path WHEN $1 THEN 15 WHEN $2 THEN 250 WHEN $3 THEN 20 END`,
+        ['Metadata/Items/Currency/CurrencyRerollRare', DIVINE, 'Metadata/Items/Currency/CurrencyRerollSocketColours'],
+      );
       await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
     });
 
@@ -113,10 +118,13 @@ describe('read API (PostgreSQL)', { skip }, () => {
       assert.equal(typeof divine.volume.quote, 'string', 'integer totals are exact strings');
       assert.equal(body.meta.total, 2);
       assert.match(body.meta.ranking, /not a validated profit estimate/);
-      // Rank 1 has the higher score: (high − low) / low × Chaos per hour.
+      // Rank 1 has the higher score: (high − low) / low × Chaos per hour × Chaos per 1k gold.
       assert.ok(body.data[0].score > body.data[1].score);
-      const d = body.data[0];
-      assert.ok(Math.abs(d.score - ((d.high_rate.value - d.low_rate.value) / d.low_rate.value) * d.turnover_per_hour) < 1e-6);
+      for (const d of body.data) {
+        const expected =
+          ((d.high_rate.value - d.low_rate.value) / d.low_rate.value) * d.turnover_per_hour * d.quote_per_1k_gold;
+        assert.ok(Math.abs(d.score - expected) / expected < 1e-9, `${d.item.path} score`);
+      }
       assert.ok(body.meta.units.rate);
       // H0+2h ended at H0+3h; the clock is 2.5 hours later, within the 3-hour limit.
       assert.deepEqual([body.meta.source_age_hours, body.meta.stale], [2.5, false]);

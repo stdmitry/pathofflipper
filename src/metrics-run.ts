@@ -6,6 +6,7 @@ import { withMetricsLock } from './ingest.ts';
 import { silentLogger, type Logger } from './log.ts';
 import {
   CALC_VERSION,
+  type FlipGold,
   flipGold,
   isEligible,
   rankMarkets,
@@ -94,11 +95,16 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
       baseId: number;
       windowHours: number;
       metrics: WindowMetrics;
+      gold: FlipGold | null;
+      score: number | null;
       rank?: number;
     }[] = [];
     for (const windowHours of WINDOWS) {
       const windowStart = hours.length - windowHours;
-      const byLeague = new Map<number, { key: number; baseId: number; sortKey: string; metrics: WindowMetrics }[]>();
+      const byLeague = new Map<
+        number,
+        { key: number; baseId: number; sortKey: string; metrics: WindowMetrics; gold: FlipGold | null; score: number | null }[]
+      >();
       for (const market of markets.values()) {
         const marketHours: MarketHour[] = hours.slice(windowStart).map((hour) => {
           const row = market.rows.get(hour);
@@ -111,18 +117,22 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
           return record ? { status, quoted: quoteHour(record, String(quoteId)) } : { status };
         });
         const list = byLeague.get(market.leagueId) ?? [];
+        const metrics = windowMetrics(marketHours);
+        const gold = flipGold(metrics, fees.get(market.baseId) ?? null, fees.get(quoteId) ?? null);
         list.push({
           key: market.pairId,
           baseId: market.baseId,
           sortKey: String(market.pairId),
-          metrics: windowMetrics(marketHours),
+          metrics,
+          gold,
+          score: rankScore(metrics, gold?.quotePerKgold ?? null),
         });
         byLeague.set(market.leagueId, list);
       }
       for (const [leagueId, list] of byLeague) {
         const ranks = rankMarkets(list, quoteItem.minPerHour);
-        for (const { key, baseId, metrics } of list) {
-          results.push({ leagueId, pairId: key, baseId, windowHours, metrics, rank: ranks.get(key) });
+        for (const { key, baseId, metrics, gold, score } of list) {
+          results.push({ leagueId, pairId: key, baseId, windowHours, metrics, gold, score, rank: ranks.get(key) });
           if (isEligible(metrics, quoteItem.minPerHour)) summary.eligible++;
         }
       }
@@ -144,8 +154,7 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
          VALUES ($1, $2, $3, to_timestamp($4)) RETURNING id`,
         [REALM, quoteId, CALC_VERSION, asOfHour],
       );
-      const rows = results.map(({ leagueId, pairId, baseId, windowHours, metrics, rank }) => {
-        const gold = flipGold(metrics, fees.get(baseId) ?? null, fees.get(quoteId) ?? null);
+      const rows = results.map(({ leagueId, pairId, windowHours, metrics, gold, score, rank }) => {
         return {
           league_id: leagueId,
           pair_id: pairId,
@@ -158,7 +167,7 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
           ...fraction('low_rate', metrics.lowRate),
           ...fraction('high_rate', metrics.highRate),
           volatility: metrics.volatility,
-          rank_score: rankScore(metrics),
+          rank_score: score,
           gold_per_flip: gold?.goldPerFlip ?? null,
           quote_per_kgold: gold?.quotePerKgold ?? null,
           activity_rank: rank ?? null,

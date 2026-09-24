@@ -1,6 +1,6 @@
 # Market metrics
 
-Status: calculation version 3, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4); version 2 changed the ranking score, version 3 added gold). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
+Status: calculation version 4, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4); version 2 changed the ranking score, version 3 added gold, version 4 put gold into the score). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
 
 **The rank orders research candidates; it is not a profit estimate.** A high rank means a wide traded price range relative to the price, in a market where a lot of Chaos changes hands steadily and the data is complete. The range comes from executed trades at different moments, not from a spread anyone could capture, so a high rank does not mean a flip will fill or pay. Estimating profit over time is gated on [#7](https://github.com/stdmitry/pathofflipper/issues/7).
 
@@ -51,13 +51,13 @@ A market is **eligible** for a window when all of these hold:
 
 Eligible markets are ranked per league and window by their **score**, highest first:
 
-> score = (high − low) / low × turnover per hour
+> score = (high − low) / low × turnover per hour × quote per 1k gold
 
-`high` and `low` are the window's highest and lowest executed rates in Chaos per unit, so the first factor is the traded price range relative to the price, and the score is in Chaos per hour (`market_metrics.rank_score`). Ties go to the higher turnover, then to the lower pair id for a stable order. Ineligible markets are stored without a rank (`activity_rank IS NULL`) but keep their score, so they can still be looked up.
+`high` and `low` are the window's highest and lowest executed rates in quote units per unit, so the first factor is the traded price range relative to the price. The last factor is what one flip at those prices earns per 1,000 gold (see [Gold](#gold)). The range therefore counts twice, once relative to the price and once in the gold margin, which favours wide ranges; this is intended. The score is stored as `market_metrics.rank_score`. Ties go to the higher turnover, then to the lower pair id for a stable order. Eligible markets whose item has no known gold fee get no score and rank after all scored markets. Ineligible markets are stored without a rank (`activity_rank IS NULL`) but keep their score, so they can still be looked up.
 
 The eligibility thresholds matter more under this score. A single odd trade in a thin market can give a range of several hundred percent: Runegraft of the Fortress traded between 211c and 728c at 6 units per hour in Allflame. The ≥100c/h and ≥50% persistence thresholds keep such markets out of the ranking.
 
-Version 1 (until 2026-09-24) ranked by turnover per hour alone.
+Version 1 ranked by turnover per hour alone; versions 2 and 3 used (high − low) / low × turnover per hour without the gold factor.
 
 How the defaults were checked, on Mirage's 24h window ending 2026-04-15 12:00 UTC (mid-league, 1,023 Chaos markets, full coverage):
 

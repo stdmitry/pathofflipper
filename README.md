@@ -69,7 +69,7 @@ Validation requires every numeric value to be an integer within ±2^53, each num
 
 ## Metrics
 
-`npm run metrics` computes metrics for every Chaos-quoted and every Divine-quoted market over the last 1, 6 and 24 hours, as a separate snapshot per quote: coverage, turnover, traded units, persistence, a volume-weighted rate, the executed-rate range and volatility. It replaces the stored snapshot (`metric_runs`, `market_metrics`) in one transaction. `--as-of <hour>` recomputes an earlier hour. Eligible markets get an `activity_rank` by score = (high − low) / low × Chaos per hour. **The score points to candidates; it is not a profit estimate.** Definitions, thresholds and the data behind them are in [Market metrics](./specs/market-metrics.md).
+`npm run metrics` computes metrics for every Chaos-quoted and every Divine-quoted market over the last 1, 6 and 24 hours, as a separate snapshot per quote: coverage, turnover, traded units, persistence, a volume-weighted rate, the executed-rate range and volatility. It replaces the stored snapshot (`metric_runs`, `market_metrics`) in one transaction. `--as-of <hour>` recomputes an earlier hour. Eligible markets get an `activity_rank` by score = (high − low) / low × turnover per hour × quote per 1k gold. **The score points to candidates; it is not a profit estimate.** Definitions, thresholds and the data behind them are in [Market metrics](./specs/market-metrics.md).
 
 ```sql
 -- Top markets of a league over the last 24 hours

@@ -22,7 +22,8 @@
       <strong>Historical screening, not live quotes.</strong>
       Low and high are the cheapest and dearest prices paid in past trades, not prices you can buy or sell at now,
       and the gap between them is not a spread you can capture. The rank orders markets by that gap relative to the
-      low price, times the amount traded per hour. It points to markets worth a closer look, not to proven profit.
+      low price, times the amount traded per hour, times what a flip earns per 1,000 gold. It points to markets worth a
+      closer look, not to proven profit.
     </p>
     <ul id="problems" class="problems" hidden></ul>
 
@@ -64,7 +65,7 @@
                 <th data-sort="low" class="num" title="Lowest price paid in a trade during the window">Low</th>
                 <th data-sort="high" class="num" title="Highest price paid in a trade during the window">High</th>
                 <th data-sort="range" class="num" title="Highest minus lowest price paid in the window; not a spread you can capture">High − Low</th>
-                <th data-sort="score" class="num" title="(High − Low) / Low × amount traded per hour">Score</th>
+                <th data-sort="score" class="num" title="(High − Low) / Low × amount traded per hour × Per 1k gold">Score</th>
                 <th data-sort="gold" class="num" title="Gold to buy one unit at Low and sell it at High. An order costs the wanted item's gold fee per unit wanted">Gold/flip</th>
                 <th data-sort="per_gold" class="num" title="What one flip at Low and High earns per 1,000 gold spent on orders; an upper bound, since Low and High are extremes">Per 1k gold</th>
                 <th data-sort="turnover" id="turnover-head" class="num" title="Amount of the quote currency traded per covered hour">Chaos/h</th>

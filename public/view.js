@@ -95,14 +95,17 @@ export function differenceText(low, high, quote = 'chaos') {
 }
 
 /**
- * The ranking score, (high − low) / low × Chaos per hour. Uses the API's value when present, otherwise computes it
- * the same way (the history summary has no stored score).
+ * The ranking score, (high − low) / low × turnover per hour × quote per 1k gold. Uses the API's value when present,
+ * otherwise computes it the same way (the history summary has no stored score).
  * @param {Market} m
  */
 export function scoreOf(m) {
   if (m.score !== undefined) return m.score;
-  if (!m.low_rate || !m.high_rate || m.turnover_per_hour === null || !(m.low_rate.value > 0)) return null;
-  return ((m.high_rate.value - m.low_rate.value) / m.low_rate.value) * m.turnover_per_hour;
+  const perGold = m.quote_per_1k_gold ?? null;
+  if (!m.low_rate || !m.high_rate || m.turnover_per_hour === null || perGold === null || !(m.low_rate.value > 0)) {
+    return null;
+  }
+  return ((m.high_rate.value - m.low_rate.value) / m.low_rate.value) * m.turnover_per_hour * perGold;
 }
 
 /** @param {number | null | undefined} share 0..1 */

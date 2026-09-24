@@ -98,7 +98,7 @@ describe('marketRow', () => {
       low: '300.0c',
       high: '345.0c',
       range: '45.0c',
-      score: '2M', // (345 − 300) / 300 × 13,437,690
+      score: '16.7M', // (345 − 300) / 300 × 13,437,690 × 8.2949
       gold: '5425',
       perGold: '8.3c',
       turnover: '13.4Mc/h',
