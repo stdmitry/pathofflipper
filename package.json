@@ -16,6 +16,7 @@
     "parse": "node --env-file-if-exists=.env src/cli/parse.ts",
     "rebuild": "node --env-file-if-exists=.env src/cli/rebuild.ts",
     "item-names": "node --env-file-if-exists=.env src/cli/item-names.ts",
+    "check-semantics": "node --env-file-if-exists=.env src/cli/check-semantics.ts",
     "test": "node --env-file-if-exists=.env --test --test-concurrency=1 \"test/**/*.test.ts\"",
     "typecheck": "tsc"
   },

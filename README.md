@@ -59,6 +59,12 @@ After the first stored hour, `--start` is ignored and runs continue from the cur
 
 Validation requires every numeric value to be an integer within ±2^53, each numeric map to have exactly the pair's two items as keys, `market_id` to equal `item_a|item_b`, no duplicate league and market, and a pair never to appear in the reverse order of an already stored pair. When a digest fails, its problems go to `raw_digests.parse_error`, it stays pending, later hours are still parsed, and the run exits with 1. Every run retries pending digests, so a failing hour keeps being reported until the parser accepts it.
 
+## Field semantics
+
+`volume_traded` holds both sides of the same trades. The ratios are reduced `a:b` fractions giving the lowest and highest executed rate, and they are 0 when nothing traded. Stock is sampled unfilled-order quantity. Pair order is not a quote convention, so code reads markets through [`src/market/semantics.ts`](./src/market/semantics.ts) (`quoteHour`, `windowRate`, `classifyHour`) rather than through the `_a`/`_b` columns. The evidence, the metrics this supports and what remains open are in [API observations](./specs/exchange-api-observations.md#field-semantics).
+
+`npm run check-semantics [-- --league <name>]` checks stored `pair_hours` against the invariants these rules rely on. It exits with 1 if any is violated. Run it when a new league starts.
+
 ## Storage
 
 Each hour is stored twice: `raw_digests` keeps the response verbatim (permanently, as the only lossless copy), and `pair_hours` holds its values as integers.
@@ -119,7 +125,7 @@ FROM pairs p JOIN items a ON a.id = p.item_a_id JOIN items b ON b.id = p.item_b_
 SELECT id, to_timestamp(request_cursor) AS hour, problems, fetched_at FROM rejected_responses;
 ```
 
-`source_hour` is the hour the data describes; the matching `raw_digests` row says when we fetched it. Pricing semantics are still open; see [API observations](./specs/exchange-api-observations.md).
+`source_hour` is the hour the data describes; the matching `raw_digests` row says when we fetched it. What the fields mean is described under [Field semantics](./specs/exchange-api-observations.md#field-semantics).
 
 ## Tests
 
