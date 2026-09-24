@@ -41,7 +41,7 @@ export const UNITS = {
   source_age_hours: `hours since the newest source hour ended; stale after ${STALE_AFTER_HOURS}`,
 } as const;
 
-interface Snapshot {
+export interface Snapshot {
   runId: string;
   asOfHour: number;
   computedAt: Date;
@@ -63,7 +63,7 @@ export async function dataVersion(pool: pg.Pool): Promise<string> {
   return `${rows[0]!.run}-${rows[0]!.parsed}`;
 }
 
-async function snapshot(pool: pg.Pool, quotePath: string): Promise<Snapshot | undefined> {
+export async function snapshot(pool: pg.Pool, quotePath: string): Promise<Snapshot | undefined> {
   const { rows } = await pool.query<{ id: string; as_of: string; computed_at: Date; calc_version: number; quote_item_id: number }>(
     `SELECT r.id, extract(epoch FROM r.as_of_hour)::bigint AS as_of, r.computed_at, r.calc_version, r.quote_item_id
      FROM metric_runs r JOIN items i ON i.id = r.quote_item_id
@@ -89,7 +89,7 @@ function freshness(asOfHour: number | undefined, now: Date) {
   };
 }
 
-function snapshotMeta(snap: Snapshot | undefined, now: Date) {
+export function snapshotMeta(snap: Snapshot | undefined, now: Date) {
   return {
     ...freshness(snap?.asOfHour, now),
     computed_at: snap?.computedAt.toISOString() ?? null,
@@ -97,15 +97,15 @@ function snapshotMeta(snap: Snapshot | undefined, now: Date) {
   };
 }
 
-function rationalJson(value: Rational | null) {
+export function rationalJson(value: Rational | null) {
   return value && { num: String(value.num), den: String(value.den), value: toNumber(value) };
 }
 
-function storedRational(num: string | null, den: string | null): Rational | null {
+export function storedRational(num: string | null, den: string | null): Rational | null {
   return num === null || den === null ? null : { num: BigInt(num), den: BigInt(den) };
 }
 
-async function leagueId(pool: pg.Pool, name: string): Promise<number> {
+export async function leagueId(pool: pg.Pool, name: string): Promise<number> {
   // Private leagues are stored but not served.
   const { rows } = await pool.query<{ id: number }>('SELECT id FROM leagues WHERE realm = $1 AND name = $2 AND NOT private', [
     REALM,
@@ -212,7 +212,7 @@ function summaryJson(m: WindowMetrics, baseFee: number | null, quoteFee: number 
   };
 }
 
-function itemJson(path: string, name: string | null, category: string) {
+export function itemJson(path: string, name: string | null, category: string) {
   return { name: itemLabel(path, name), path, category, named: name !== null };
 }
 

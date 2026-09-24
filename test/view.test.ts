@@ -170,9 +170,9 @@ describe('historySeries', () => {
 
 describe('page state in the address bar', () => {
   it('round-trips and omits defaults', () => {
-    const state = { ...DEFAULT_STATE, league: 'Hardcore Allflame', window: '1h' as const, sort: 'low' as const, q: 'scarab', offset: 50 };
+    const state = { ...DEFAULT_STATE, league: 'Hardcore Allflame', quote: 'flip' as const, window: '6h' as const, sort: 'margin' as const, q: 'scarab', offset: 50 };
     const search = searchFromState(state);
-    assert.equal(search, '?league=Hardcore+Allflame&window=1h&sort=low&q=scarab&offset=50');
+    assert.equal(search, '?league=Hardcore+Allflame&quote=flip&window=6h&sort=margin&q=scarab&offset=50');
     assert.deepEqual(stateFromSearch(search), state);
     assert.equal(searchFromState(DEFAULT_STATE), '');
   });
@@ -185,7 +185,7 @@ describe('page state in the address bar', () => {
     assert.deepEqual(marketQuery({ ...DEFAULT_STATE, league: 'Allflame', quote: 'divine', q: 'orb', order: 'desc' }, 50), {
       league: 'Allflame',
       quote: 'divine',
-      window: '24h',
+      window: '1h',
       scope: 'eligible',
       sort: 'rank',
       limit: '50',

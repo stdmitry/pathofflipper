@@ -22,7 +22,7 @@ describe('parseMarketListParams', () => {
       realm: 'pc',
       league: 'Mirage',
       quote: 'chaos',
-      window: 24,
+      window: 1,
       scope: 'eligible',
       sort: 'rank',
       order: 'asc',

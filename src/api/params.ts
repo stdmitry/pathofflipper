@@ -41,6 +41,21 @@ export interface MarketListParams {
   offset: number;
 }
 
+export const FLIP_SORTS = ['rank', 'score', 'margin', 'margin_pct', 'per_gold', 'gold', 'turnover', 'buy', 'sell', 'name'] as const;
+export type FlipSort = (typeof FLIP_SORTS)[number];
+
+export interface FlipListParams {
+  realm: typeof REALM;
+  league: string;
+  window: WindowHours;
+  scope: 'eligible' | 'all';
+  sort: FlipSort;
+  order: 'asc' | 'desc';
+  q: string | undefined;
+  limit: number;
+  offset: number;
+}
+
 export interface HistoryParams {
   realm: typeof REALM;
   league: string;
@@ -108,7 +123,7 @@ export function parseStatusParams(params: URLSearchParams): { realm: typeof REAL
 export function parseMarketListParams(params: URLSearchParams): MarketListParams {
   const query = new Query(params, ['realm', 'league', 'quote', 'window', 'scope', 'sort', 'order', 'q', 'limit', 'offset']);
   const windowLabels = WINDOWS.map((hours) => `${hours}h`);
-  const window = Number(query.oneOf('window', windowLabels, '24h').slice(0, -1)) as WindowHours;
+  const window = Number(query.oneOf('window', windowLabels, '1h').slice(0, -1)) as WindowHours;
   const sort = query.oneOf('sort', MARKET_SORTS, 'rank');
   // Rank 1 is best and names read A to Z; every other sort shows the largest values first.
   const defaultOrder = sort === 'rank' || sort === 'name' ? 'asc' : 'desc';
@@ -116,6 +131,25 @@ export function parseMarketListParams(params: URLSearchParams): MarketListParams
     realm: realm(query),
     league: query.text('league', true),
     quote: query.oneOf('quote', QUOTE_NAMES, 'chaos'),
+    window,
+    scope: query.oneOf('scope', ['eligible', 'all'], 'eligible'),
+    sort,
+    order: query.oneOf('order', ['asc', 'desc'], defaultOrder),
+    q: query.text('q'),
+    limit: query.int('limit', 1, MAX_LIMIT, 50),
+    offset: query.int('offset', 0, MAX_OFFSET, 0),
+  };
+}
+
+export function parseFlipListParams(params: URLSearchParams): FlipListParams {
+  const query = new Query(params, ['realm', 'league', 'window', 'scope', 'sort', 'order', 'q', 'limit', 'offset']);
+  const windowLabels = WINDOWS.map((hours) => `${hours}h`);
+  const window = Number(query.oneOf('window', windowLabels, '1h').slice(0, -1)) as WindowHours;
+  const sort = query.oneOf('sort', FLIP_SORTS, 'rank');
+  const defaultOrder = sort === 'rank' || sort === 'name' ? 'asc' : 'desc';
+  return {
+    realm: realm(query),
+    league: query.text('league', true),
     window,
     scope: query.oneOf('scope', ['eligible', 'all'], 'eligible'),
     sort,

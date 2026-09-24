@@ -492,3 +492,14 @@ tr.message button {
 .footer a {
   color: inherit;
 }
+
+.market-section {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.market-section h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}

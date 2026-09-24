@@ -7,11 +7,13 @@ import { errorMessage, silentLogger, type Logger } from '../log.ts';
 import {
   decodeMarketId,
   InvalidParameterError,
+  parseFlipListParams,
   parseHistoryParams,
   parseLeaguesParams,
   parseMarketListParams,
   parseStatusParams,
 } from './params.ts';
+import { listFlips } from './flips.ts';
 import { collectorStatus, dataVersion, listLeagues, listMarkets, marketHistory, NotFoundError } from './queries.ts';
 
 export interface ApiOptions {
@@ -78,6 +80,7 @@ export function createApiServer(pool: pg.Pool, options: ApiOptions = {}): http.S
   const routes: Route[] = [
     { pattern: /^\/api\/leagues$/, cached: true, handler: () => (url, at) => (parseLeaguesParams(url.searchParams), listLeagues(pool, at)) },
     { pattern: /^\/api\/markets$/, cached: true, handler: () => (url, at) => listMarkets(pool, parseMarketListParams(url.searchParams), at) },
+    { pattern: /^\/api\/flips$/, cached: true, handler: () => (url, at) => listFlips(pool, parseFlipListParams(url.searchParams), at) },
     {
       pattern: /^\/api\/markets\/([^/]+)\/history$/,
       cached: true,

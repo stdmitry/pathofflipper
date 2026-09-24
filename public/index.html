@@ -36,9 +36,10 @@
             <select id="league" name="league" disabled></select>
           </label>
           <fieldset class="segmented">
-            <legend>Priced in</legend>
+            <legend>View</legend>
             <label><input type="radio" name="quote" value="chaos" /> Chaos</label>
             <label><input type="radio" name="quote" value="divine" /> Divine</label>
+            <label title="Buy for Chaos, then sell in bulk for Divines"><input type="radio" name="quote" value="flip" /> Chaos → Divine</label>
           </fieldset>
           <fieldset class="segmented">
             <legend>Window</legend>
@@ -59,21 +60,7 @@
         <div class="table-wrap">
           <table id="table">
             <thead>
-              <tr>
-                <th data-sort="rank" class="num" title="Position by score among eligible markets">Rank</th>
-                <th data-sort="name">Item</th>
-                <th data-sort="low" class="num" title="Lowest price paid in a trade during the window">Low</th>
-                <th data-sort="high" class="num" title="Highest price paid in a trade during the window">High</th>
-                <th data-sort="range" class="num" title="Highest minus lowest price paid in the window; not a spread you can capture">High − Low</th>
-                <th data-sort="score" class="num" title="(High − Low) / Low × amount traded per hour × Per 1k gold">Score</th>
-                <th data-sort="gold" class="num" title="Gold to buy one unit at Low and sell it at High. An order costs the wanted item's gold fee per unit wanted">Gold/flip</th>
-                <th data-sort="per_gold" class="num" title="What one flip at Low and High earns per 1,000 gold spent on orders; an upper bound, since Low and High are extremes">Per 1k gold</th>
-                <th data-sort="turnover" id="turnover-head" class="num" title="Amount of the quote currency traded per covered hour">Chaos/h</th>
-                <th data-sort="units" class="num" title="Units of the item traded per covered hour">Units/h</th>
-                <th data-sort="persistence" class="num" title="Hours with trades / hours with data">Traded</th>
-                <th class="num" title="Hours with data / hours in the window">Coverage</th>
-                <th data-sort="volatility" class="num" title="Spread of hourly rates, weighted by volume">Volatility</th>
-              </tr>
+              <tr id="head"></tr>
             </thead>
             <tbody id="rows"></tbody>
           </table>
