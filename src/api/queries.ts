@@ -146,6 +146,8 @@ const SORT_SQL: Record<MarketSort, string> = {
   persistence: 'm.traded_hours::numeric / nullif(m.covered_hours, 0)',
   volatility: 'm.volatility',
   rate: 'm.rate_num::numeric / m.rate_den',
+  low: 'm.low_rate_num::numeric / m.low_rate_den',
+  high: 'm.high_rate_num::numeric / m.high_rate_den',
   name: 'lower(coalesce(base.display_name, base.metadata_path))',
 };
 

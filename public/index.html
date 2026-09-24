@@ -20,8 +20,8 @@
 
     <p class="notice">
       <strong>Historical screening, not live quotes.</strong>
-      Rates are volume-weighted prices of past trades, not prices you can buy or sell at now. The low–high range is
-      not a spread. The rank measures trading activity, not profit.
+      Low and high are the cheapest and dearest prices paid in past trades, not prices you can buy or sell at now,
+      and the gap between them is not a spread you can capture. The rank measures trading activity, not profit.
     </p>
     <ul id="problems" class="problems" hidden></ul>
 
@@ -55,8 +55,8 @@
               <tr>
                 <th data-sort="rank" class="num" title="Activity rank among eligible markets">Rank</th>
                 <th data-sort="name">Item</th>
-                <th data-sort="rate" class="num" title="Volume-weighted rate of past trades in the window">Rate</th>
-                <th class="num" title="Lowest and highest traded rate in the window; not a spread">Low – high</th>
+                <th data-sort="low" class="num" title="Lowest price paid in a trade during the window">Low</th>
+                <th data-sort="high" class="num" title="Highest price paid in a trade during the window">High</th>
                 <th data-sort="turnover" class="num" title="Chaos traded per covered hour">Chaos/h</th>
                 <th data-sort="units" class="num" title="Units of the item traded per covered hour">Units/h</th>
                 <th data-sort="persistence" class="num" title="Hours with trades / hours with data">Traded</th>

@@ -10,7 +10,6 @@ import {
   marketQuery,
   marketRow,
   percentText,
-  rangeText,
   rateText,
   searchFromState,
   stateFromSearch,
@@ -22,26 +21,21 @@ import {
 const rate = (value: number) => ({ num: String(value), den: '1', value });
 
 describe('number formatting', () => {
-  it('compacts large numbers and keeps small ones readable', () => {
+  it('compacts large numbers with at most one decimal', () => {
     assert.deepEqual(
-      [13437690, 1966568, 40897.9, 9999, 328.57, 4.058, 0.06914, 0, null].map((n) => compact(n)),
-      ['13.4M', '2M', '40.9k', '9999', '329', '4.06', '0.0691', '0', DASH],
+      [13437690, 1966568, 40897.9, 9999, 328.57, 35.89, 4.058, 0.06914, 0, null].map((n) => compact(n)),
+      ['13.4M', '2M', '40.9k', '9999', '329', '35.9', '4.1', '0.1', '0', DASH],
     );
   });
 
-  it('shows Chaos rates as chaos each, or per chaos below 1', () => {
+  it('shows Chaos rates with one decimal, as chaos each or per chaos below 1', () => {
     assert.equal(rateText(rate(328.5666)), '328.6c');
-    assert.equal(rateText(rate(1234.4)), '1234c');
-    assert.equal(rateText(rate(4.0582)), '4.058c');
-    assert.equal(rateText({ num: '1', den: '14', value: 1 / 14 }), '14 per c');
+    assert.equal(rateText(rate(354)), '354.0c');
+    assert.equal(rateText(rate(1234.44)), '1234.4c');
+    assert.equal(rateText(rate(6.328)), '6.3c');
+    assert.equal(rateText({ num: '1', den: '14', value: 1 / 14 }), '14.0 per c');
+    assert.equal(rateText({ num: '200', den: '1937', value: 200 / 1937 }), '9.7 per c');
     assert.equal(rateText(null), DASH);
-  });
-
-  it('orders a range cheapest first in both notations', () => {
-    assert.equal(rangeText(rate(300), rate(345)), '300c – 345c');
-    // 1/18 to 1/12 chaos each reads as 18 per c (cheapest) to 12 per c.
-    assert.equal(rangeText({ num: '1', den: '18', value: 1 / 18 }, { num: '1', den: '12', value: 1 / 12 }), '12 per c – 18 per c');
-    assert.equal(rangeText(null, rate(1)), DASH);
   });
 
   it('formats shares, volatility, ages and hours', () => {
@@ -79,8 +73,8 @@ describe('marketRow', () => {
       name: 'Divine Orb',
       category: 'Currency',
       unnamed: false,
-      rate: '328.6c',
-      range: '300c – 345c',
+      low: '300.0c',
+      high: '345.0c',
       turnover: '13.4Mc/h',
       units: '40.9k/h',
       traded: '12/18 h',
@@ -94,7 +88,7 @@ describe('marketRow', () => {
   it('shows unknown values as a dash rather than zero', () => {
     const row = marketRow({ ...market, rank: null, eligible: false, covered_hours: 0, traded_hours: 0, coverage: 0,
       turnover_per_hour: null, units_per_hour: null, rate: null, low_rate: null, high_rate: null, volatility: null });
-    assert.deepEqual([row.rank, row.rate, row.range, row.turnover, row.units, row.volatility], [DASH, DASH, DASH, DASH, DASH, DASH]);
+    assert.deepEqual([row.rank, row.low, row.high, row.turnover, row.units, row.volatility], [DASH, DASH, DASH, DASH, DASH, DASH]);
     assert.equal(row.lowCoverage, true);
   });
 });
@@ -133,8 +127,8 @@ describe('historySeries', () => {
       hours: [hour('10', 'missing'), hour('11', 'traded', 300), hour('12', 'inactive'), hour('13', 'exchange-down'), hour('14', 'listed')],
     });
     assert.deepEqual(series.x, [1776247200, 1776250800, 1776254400, 1776258000, 1776261600]);
-    assert.deepEqual(series.rate, [null, 300, null, null, null]);
-    assert.deepEqual([series.low[1], series.high[1]], [299, 301]);
+    assert.deepEqual(series.low, [null, 299, null, null, null]);
+    assert.deepEqual(series.high, [null, 301, null, null, null]);
     assert.deepEqual(series.turnover, [null, 3000, 0, null, 0]);
     assert.deepEqual(statusCounts(series.statuses).map((s) => [s.status, s.count]), [
       ['traded', 1],
@@ -148,15 +142,15 @@ describe('historySeries', () => {
 
 describe('page state in the address bar', () => {
   it('round-trips and omits defaults', () => {
-    const state = { ...DEFAULT_STATE, league: 'Hardcore Allflame', window: '1h' as const, sort: 'turnover' as const, q: 'scarab', offset: 50 };
+    const state = { ...DEFAULT_STATE, league: 'Hardcore Allflame', window: '1h' as const, sort: 'low' as const, q: 'scarab', offset: 50 };
     const search = searchFromState(state);
-    assert.equal(search, '?league=Hardcore+Allflame&window=1h&sort=turnover&q=scarab&offset=50');
+    assert.equal(search, '?league=Hardcore+Allflame&window=1h&sort=low&q=scarab&offset=50');
     assert.deepEqual(stateFromSearch(search), state);
     assert.equal(searchFromState(DEFAULT_STATE), '');
   });
 
   it('falls back to defaults for invalid values', () => {
-    assert.deepEqual(stateFromSearch('?window=2h&sort=drop&offset=-5&history=90d&scope=x'), DEFAULT_STATE);
+    assert.deepEqual(stateFromSearch('?window=2h&sort=rate&offset=-5&history=90d&scope=x'), DEFAULT_STATE);
   });
 
   it('builds the market list query', () => {

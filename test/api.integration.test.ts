@@ -128,6 +128,15 @@ describe('read API (PostgreSQL)', { skip }, () => {
       assert.deepEqual(page.body.data.map((m: Json) => m.item.path), all.body.data.slice(1, 3).map((m: Json) => m.item.path));
       assert.equal(page.body.meta.total, 5);
 
+      // Low and high sort by the traded price extremes; markets without trades go last either way.
+      for (const key of ['low', 'high']) {
+        const sorted = await get(`/api/markets?league=Mirage&scope=all&sort=${key}`);
+        const values = sorted.body.data.map((m: Json) => m[`${key}_rate`]?.value ?? null);
+        const priced = values.filter((v: number | null) => v !== null);
+        assert.deepEqual(priced, [...priced].sort((a: number, b: number) => b - a), `sort=${key} is descending`);
+        assert.deepEqual(values.slice(priced.length), values.slice(priced.length).map(() => null));
+      }
+
       const mirror = await get('/api/markets?league=Mirage&scope=all&q=duplicate');
       assert.deepEqual(mirror.body.data.map((m: Json) => m.item.path), [MIRROR]);
       const wildcard = await get(`/api/markets?league=Mirage&scope=all&q=${encodeURIComponent('%')}`);

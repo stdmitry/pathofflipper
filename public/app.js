@@ -152,8 +152,8 @@ function renderRows(rows) {
         { class: [r.id === state.market ? 'selected' : '', r.eligible ? '' : 'ineligible'].join(' ').trim() },
         el('td', { class: 'num' }, r.rank),
         el('td', {}, open, el('span', { class: 'category' }, r.category)),
-        el('td', { class: 'num strong' }, r.rate),
-        el('td', { class: 'num' }, r.range),
+        el('td', { class: 'num strong' }, r.low),
+        el('td', { class: 'num strong' }, r.high),
         el('td', { class: 'num' }, r.turnover),
         el('td', { class: 'num' }, r.units),
         el('td', { class: 'num' }, r.traded),
@@ -233,15 +233,15 @@ function renderDetail(history) {
 
   /** @type {[string, string, string][]} */
   const stats = [
-    ['Rate', row.rate, 'Volume-weighted rate of past trades in this window'],
-    ['Low – high', row.range, 'Lowest and highest traded rate; not a spread'],
+    ['Low', row.low, 'Lowest price paid in a trade during this window'],
+    ['High', row.high, 'Highest price paid in a trade during this window'],
     ['Chaos/h', row.turnover, 'Chaos traded per hour with data'],
     ['Units/h', row.units, `${item.name} traded per hour with data`],
     ['Traded', row.traded, 'Hours with trades / hours with data'],
     ['Coverage', row.coverage, 'Hours with data / hours in the window'],
     ['Volatility', row.volatility, 'Spread of hourly rates, weighted by volume'],
   ];
-  const chartBox = el('div', { class: 'chart', role: 'img', 'aria-label': `Hourly rate and Chaos traded for ${item.name}` });
+  const chartBox = el('div', { class: 'chart', role: 'img', 'aria-label': `Hourly low and high price and Chaos traded for ${item.name}` });
   const strip = el(
     'div',
     { class: 'strip', 'aria-hidden': 'true' },
@@ -264,11 +264,11 @@ function renderDetail(history) {
     el(
       'p',
       { class: 'meta' },
-      `Hours up to ${view.hourText(history.meta.as_of_hour)}. Gaps in the line are hours without trades; grey hours have no data. ` +
-        'Rates are what past trades paid, not what you can trade at now.',
+      `Hours up to ${view.hourText(history.meta.as_of_hour)}. Gaps in the lines are hours without trades; grey hours have no data. ` +
+        'Prices are what past trades paid, not what you can trade at now.',
     ),
   );
-  if (series.rate.some((v) => v !== null)) chart = drawHistory(chartBox, series);
+  if (series.high.some((v) => v !== null)) chart = drawHistory(chartBox, series);
   else chartBox.replaceChildren(el('p', { class: 'empty' }, 'No trades in this window.'));
 }
 

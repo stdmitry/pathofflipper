@@ -7,8 +7,8 @@ function cssVar(name) {
 }
 
 /**
- * Draws hourly rate (line), the executed low–high range (band) and Chaos turnover (bars). Hours without trades are
- * null, so the line breaks at gaps instead of interpolating across them.
+ * Draws each hour's lowest and highest traded price (lines with the band between them) and Chaos turnover (bars).
+ * Hours without trades are null, so the lines break at gaps instead of interpolating across them.
  * @param {HTMLElement} container
  * @param {ReturnType<typeof import('./view.js').historySeries>} series
  * @returns {uPlot}
@@ -21,7 +21,7 @@ export function drawHistory(container, series) {
   const text = cssVar('--muted');
   const grid = cssVar('--grid');
   /** @type {(u: uPlot, v: number | null) => string} */
-  const rateValue = (_u, v) => (v === null || v === undefined ? '—' : `${Number(v.toPrecision(4))}c`);
+  const rateValue = (_u, v) => (v === null || v === undefined ? '—' : `${v.toFixed(1)}c`);
   const axis = { stroke: text, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid, width: 1 } };
 
   /** @type {uPlot.Options} */
@@ -36,9 +36,8 @@ export function drawHistory(container, series) {
     },
     series: [
       { value: (_u, v) => (v === null ? '—' : hourText(new Date(v * 1000).toISOString())) },
-      { label: 'Rate', scale: 'rate', stroke: accent, width: 2, value: rateValue },
-      { label: 'Low', scale: 'rate', stroke: band, width: 1, points: { show: false }, value: rateValue },
-      { label: 'High', scale: 'rate', stroke: band, width: 1, points: { show: false }, value: rateValue },
+      { label: 'Low', scale: 'rate', stroke: accent, width: 1.5, value: rateValue },
+      { label: 'High', scale: 'rate', stroke: accent, width: 1.5, dash: [4, 3], value: rateValue },
       {
         label: 'Chaos traded',
         scale: 'turnover',
@@ -50,13 +49,13 @@ export function drawHistory(container, series) {
         value: (_u, v) => (v === null ? '—' : `${compact(v)}c`),
       },
     ],
-    bands: [{ series: [3, 2], fill: band }],
+    bands: [{ series: [2, 1], fill: band }],
     axes: [
       { ...axis },
       { ...axis, scale: 'rate', values: (_u, ticks) => ticks.map((t) => `${Number(t.toPrecision(3))}c`), size: 60 },
       { ...axis, scale: 'turnover', side: 1, grid: { show: false }, values: (_u, ticks) => ticks.map((t) => compact(t)), size: 56 },
     ],
   };
-  const data = /** @type {uPlot.AlignedData} */ ([series.x, series.rate, series.low, series.high, series.turnover]);
+  const data = /** @type {uPlot.AlignedData} */ ([series.x, series.low, series.high, series.turnover]);
   return new uPlot(options, data, container);
 }

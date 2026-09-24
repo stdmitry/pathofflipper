@@ -39,7 +39,7 @@ const PROBLEMS = /** @type {Record<string, string>} */ ({
 });
 
 /**
- * Compact number: 13437690 → "13.4M", 40897.9 → "40.9k", 328.57 → "329", 4.058 → "4.06", 0.0691 → "0.0691".
+ * Compact number with at most one decimal: 13437690 → "13.4M", 40897.9 → "40.9k", 328.57 → "329", 4.058 → "4.1".
  * @param {number | null | undefined} n
  */
 export function compact(n) {
@@ -49,9 +49,7 @@ export function compact(n) {
   if (abs >= 1e6) return `${trim(n / 1e6, 1)}M`;
   if (abs >= 1e4) return `${trim(n / 1e3, 1)}k`;
   if (abs >= 100) return String(Math.round(n));
-  if (abs >= 1) return trim(n, 2);
-  if (abs === 0) return '0';
-  return String(Number(n.toPrecision(3)));
+  return trim(n, 1);
 }
 
 /** @param {number} n @param {number} digits */
@@ -60,27 +58,14 @@ function trim(n, digits) {
 }
 
 /**
- * A Chaos rate for display. Items worth at least 1 Chaos read "328.6c"; cheaper ones read as how many you get per
- * Chaos ("14.5 per c"), which is how players quote them.
+ * A Chaos rate for display, with one decimal. Items worth at least 1 Chaos read "328.6c"; cheaper ones read as how
+ * many you get per Chaos ("14.5 per c"), which is how players quote them.
  * @param {Rate | null} rate
  */
 export function rateText(rate) {
   if (!rate || !(rate.value > 0)) return DASH;
-  if (rate.value >= 1) return `${precise(rate.value)}c`;
-  return `${precise(1 / rate.value)} per c`;
-}
-
-/** Four significant digits, without exponent notation: 328.57 → "328.6", 14.4938 → "14.49", 1234.5 → "1235". */
-function precise(/** @type {number} */ n) {
-  if (n >= 1000) return String(Math.round(n));
-  return String(Number(n.toPrecision(4)));
-}
-
-/** @param {Rate | null} low @param {Rate | null} high */
-export function rangeText(low, high) {
-  if (!low || !high) return DASH;
-  // Below 1 Chaos the display inverts, so the cheapest end reads first either way.
-  return high.value < 1 ? `${rateText(high)} – ${rateText(low)}` : `${rateText(low)} – ${rateText(high)}`;
+  if (rate.value >= 1) return `${rate.value.toFixed(1)}c`;
+  return `${(1 / rate.value).toFixed(1)} per c`;
 }
 
 /** @param {number | null | undefined} share 0..1 */
@@ -116,8 +101,9 @@ export function marketRow(m) {
     name: m.item.name,
     category: m.item.category,
     unnamed: !m.item.named,
-    rate: rateText(m.rate),
-    range: rangeText(m.low_rate, m.high_rate),
+    // The lowest and highest price actually paid in the window, in Chaos per item.
+    low: rateText(m.low_rate),
+    high: rateText(m.high_rate),
     turnover: m.turnover_per_hour === null ? DASH : `${compact(m.turnover_per_hour)}c/h`,
     units: m.units_per_hour === null ? DASH : `${compact(m.units_per_hour)}/h`,
     traded: `${m.traded_hours}/${m.covered_hours} h`,
@@ -147,20 +133,18 @@ export function statusBanner(status) {
  */
 export function historySeries(history) {
   const x = [];
-  const rate = [];
   const low = [];
   const high = [];
   const turnover = [];
   for (const h of history.hours) {
     x.push(Date.parse(h.hour) / 1000);
-    rate.push(h.rate?.value ?? null);
     low.push(h.low_rate?.value ?? null);
     high.push(h.high_rate?.value ?? null);
     // Covered hours without trades are a real zero; unknown hours stay empty.
     const known = HOUR_STATUSES.find((s) => s.status === h.status)?.known ?? false;
     turnover.push(h.volume ? Number(h.volume.quote) : known ? 0 : null);
   }
-  return { x, rate, low, high, turnover, statuses: history.hours.map((h) => h.status) };
+  return { x, low, high, turnover, statuses: history.hours.map((h) => h.status) };
 }
 
 /** Counts of each hour status, in legend order. @param {string[]} statuses */
@@ -177,7 +161,8 @@ export function statusCounts(statuses) {
 /**
  * @typedef {{
  *   league: string, window: '1h' | '6h' | '24h', scope: 'eligible' | 'all',
- *   sort: 'rank' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'rate' | 'name', order: '' | 'asc' | 'desc',
+ *   sort: 'rank' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'low' | 'high' | 'name',
+ *   order: '' | 'asc' | 'desc',
  *   q: string, offset: number, market: string, history: '24h' | '7d' | '30d'
  * }} State
  */
@@ -198,7 +183,7 @@ export const DEFAULT_STATE = Object.freeze({
 const CHOICES = /** @type {Record<string, readonly string[]>} */ ({
   window: ['1h', '6h', '24h'],
   scope: ['eligible', 'all'],
-  sort: ['rank', 'turnover', 'units', 'persistence', 'volatility', 'rate', 'name'],
+  sort: ['rank', 'turnover', 'units', 'persistence', 'volatility', 'low', 'high', 'name'],
   order: ['', 'asc', 'desc'],
   history: ['24h', '7d', '30d'],
 });

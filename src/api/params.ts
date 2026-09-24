@@ -15,7 +15,7 @@ export class InvalidParameterError extends Error {
 export const QUOTES = { chaos: 'Metadata/Items/Currency/CurrencyRerollRare' } as const;
 export type Quote = keyof typeof QUOTES;
 
-export const MARKET_SORTS = ['rank', 'turnover', 'units', 'persistence', 'volatility', 'rate', 'name'] as const;
+export const MARKET_SORTS = ['rank', 'turnover', 'units', 'persistence', 'volatility', 'rate', 'low', 'high', 'name'] as const;
 export type MarketSort = (typeof MARKET_SORTS)[number];
 
 /** History windows in hours; 30 days bounds a response to 720 points. */
