@@ -186,15 +186,13 @@ async function loadResponses(pool: pg.Pool, first: number, last: number): Promis
 
 /** Markets per league and hour, keyed `league:hour`, to tell an inactive market from a league that isn't running. */
 async function loadLeagueMarkets(pool: pg.Pool, first: number, last: number): Promise<Map<string, number>> {
-  const { rows } = await pool.query<{ league_id: number; hour: string; markets: string }>(
-    `SELECT league_id, extract(epoch FROM source_hour)::bigint AS hour, count(*) AS markets
-     FROM pair_hours
-     WHERE source_hour BETWEEN to_timestamp($2) AND to_timestamp($3)
-       AND league_id IN (SELECT id FROM leagues WHERE realm = $1)
-     GROUP BY 1, 2`,
+  const { rows } = await pool.query<{ league_id: number; hour: string; markets: number }>(
+    `SELECT h.league_id, extract(epoch FROM h.source_hour)::bigint AS hour, h.markets
+     FROM league_hours h JOIN leagues l ON l.id = h.league_id
+     WHERE l.realm = $1 AND h.source_hour BETWEEN to_timestamp($2) AND to_timestamp($3)`,
     [REALM, first, last],
   );
-  return new Map(rows.map((row) => [`${row.league_id}:${Number(row.hour)}`, Number(row.markets)]));
+  return new Map(rows.map((row) => [`${row.league_id}:${Number(row.hour)}`, row.markets]));
 }
 
 interface QuoteMarket {
@@ -203,7 +201,7 @@ interface QuoteMarket {
   rows: Map<number, PairHourRow>;
 }
 
-/** Every quote-currency market with at least one row in the window, with its rows by hour. */
+/** Every quote-currency market of a public league with at least one row in the window, with its rows by hour. */
 async function loadQuoteMarkets(pool: pg.Pool, quoteId: number, first: number, last: number) {
   const columns = NUMERIC_FIELDS.flatMap((field) => [`h.${field}_a`, `h.${field}_b`]).join(', ');
   const { rows } = await pool.query<PairHourRow>(
@@ -213,7 +211,7 @@ async function loadQuoteMarkets(pool: pg.Pool, quoteId: number, first: number, l
      )
      SELECT h.league_id, h.pair_id, p.item_a_id, p.item_b_id, extract(epoch FROM h.source_hour)::bigint AS hour, ${columns}
      FROM w h JOIN pairs p ON p.id = h.pair_id
-     WHERE $2 IN (p.item_a_id, p.item_b_id) AND h.league_id IN (SELECT id FROM leagues WHERE realm = $1)`,
+     WHERE $2 IN (p.item_a_id, p.item_b_id) AND h.league_id IN (SELECT id FROM leagues WHERE realm = $1 AND NOT private)`,
     [REALM, quoteId, first, last],
   );
   const markets = new Map<string, QuoteMarket>();

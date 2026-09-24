@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { REALM } from './config.ts';
-import { storeMarkets } from './db/markets.ts';
+import { type StoreOptions, storeMarkets } from './db/markets.ts';
 import { hourIso } from './exchange/hours.ts';
 import { MalformedResponseError, parseMarkets, PARSER_VERSION } from './exchange/parse.ts';
 import { withParseLock } from './ingest.ts';
@@ -30,20 +30,21 @@ export interface ParseSummary {
 }
 
 /**
- * Parses one stored digest's markets into the dictionaries and pair_hours inside the caller's transaction.
- * Returns the number of markets in the payload and the pair_hours rows inserted.
+ * Parses one stored digest's markets into the dictionaries, pair_hours and league_hours inside the caller's
+ * transaction. Returns the number of markets in the payload and the pair_hours rows inserted.
  */
 export async function parseStoredDigest(
   client: pg.PoolClient,
   digestId: string,
   sourceHour: number,
   itemNames: ItemNames,
+  options: StoreOptions = {},
 ): Promise<{ markets: number; inserted: number }> {
   const { rows } = await client.query<{ payload: string }>('SELECT payload::text AS payload FROM raw_digests WHERE id = $1', [
     digestId,
   ]);
   const markets = parseMarkets(rows[0]!.payload);
-  const inserted = await storeMarkets(client, REALM, sourceHour, markets, itemNames);
+  const inserted = await storeMarkets(client, REALM, sourceHour, markets, itemNames, options);
   return { markets: markets.length, inserted };
 }
 

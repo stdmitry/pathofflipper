@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import type pg from 'pg';
 import type { ExchangeResponse, ExchangeSource } from '../src/exchange/client.ts';
+import { ingest } from '../src/ingest.ts';
+import { parsePending } from '../src/parse-hours.ts';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 export const skipWithoutDatabase = TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not set (see README: Tests)';
@@ -57,4 +59,24 @@ export class FakeExchange implements ExchangeSource {
     }
     return { url, status: 200, body: hourBody(cursor) };
   }
+}
+
+/** Three consecutive real Mirage hours from 2026-04-15 10:00 UTC, trimmed to 7 markets each (values unmodified). */
+export const mirageFixture = JSON.parse(
+  readFileSync(new URL('./fixtures/pc-mirage-1776247200-3h.json', import.meta.url), 'utf8'),
+) as { hours: { source_hour: number; market_count: number; body: { next_change_id: number; markets: unknown[] } }[] };
+
+export const CHAOS_PATH = 'Metadata/Items/Currency/CurrencyRerollRare';
+
+/** Fetches and parses the Mirage fixture hours as H0..H0+2h, then an empty (exchange-down) response at H0+3h. */
+export async function loadMirageHours(pool: pg.Pool): Promise<void> {
+  const exchange = new FakeExchange(4);
+  mirageFixture.hours.forEach(({ body }, i) => {
+    const cursor = H0 + i * HOUR;
+    exchange.overrides.set(cursor, { url: 'fake', status: 200, body: JSON.stringify({ ...body, next_change_id: cursor + HOUR }) });
+  });
+  const empty = H0 + 3 * HOUR;
+  exchange.overrides.set(empty, { url: 'fake', status: 200, body: JSON.stringify({ next_change_id: empty + HOUR, markets: [] }) });
+  await ingest(pool, exchange, { maxHours: 5, start: { kind: 'hour', cursor: H0 } });
+  await parsePending(pool, { itemNames: new Map([[CHAOS_PATH, 'Chaos Orb']]) });
 }

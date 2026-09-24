@@ -1,18 +1,25 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import pg from 'pg';
 import { runMigrations } from '../src/db/migrate.ts';
 import { ConcurrentRunError, ingest, withMetricsLock } from '../src/ingest.ts';
+import { parsePending } from '../src/parse-hours.ts';
 import { CALC_VERSION } from '../src/market/metrics.ts';
 import { CHAOS_PATH, computeMetrics } from '../src/metrics-run.ts';
-import { parsePending } from '../src/parse-hours.ts';
-import { FakeExchange, H0, HOUR, resetSchema, skipWithoutDatabase as skip, TEST_DATABASE_URL } from './support.ts';
+import {
+  FakeExchange,
+  H0,
+  HOUR,
+  loadMirageHours,
+  marketJson,
+  mirageFixture,
+  resetSchema,
+  skipWithoutDatabase as skip,
+  TEST_DATABASE_URL,
+} from './support.ts';
 
-// Three real Mirage hours (trimmed), served here as H0 .. H0+2h.
-const mirage = JSON.parse(
-  readFileSync(new URL('./fixtures/pc-mirage-1776247200-3h.json', import.meta.url), 'utf8'),
-) as { hours: { body: { markets: unknown[] } }[] };
+// The Mirage fixture hours are served as H0 .. H0+2h, then an exchange-down hour (see loadMirageHours).
+const mirage = mirageFixture;
 
 const DIVINE = 'Metadata/Items/Currency/CurrencyModValues';
 const CHROMATIC = 'Metadata/Items/Currency/CurrencyRerollSocketColours';
@@ -34,19 +41,6 @@ interface MetricRow {
 
 describe('computeMetrics (PostgreSQL)', { skip }, () => {
   let pool: pg.Pool;
-
-  /** Fetches and parses the Mirage hours at H0..H0+2h and an empty (exchange-down) response at H0+3h. */
-  async function load(): Promise<void> {
-    const exchange = new FakeExchange(4);
-    mirage.hours.forEach(({ body }, i) => {
-      const cursor = H0 + i * HOUR;
-      exchange.overrides.set(cursor, { url: 'fake', status: 200, body: JSON.stringify({ ...body, next_change_id: cursor + HOUR }) });
-    });
-    const empty = H0 + 3 * HOUR;
-    exchange.overrides.set(empty, { url: 'fake', status: 200, body: JSON.stringify({ next_change_id: empty + HOUR, markets: [] }) });
-    await ingest(pool, exchange, { maxHours: 5, start: { kind: 'hour', cursor: H0 } });
-    await parsePending(pool, { itemNames: new Map([[CHAOS_PATH, 'Chaos Orb']]) });
-  }
 
   async function metricsFor(item: string): Promise<Map<number, MetricRow>> {
     const { rows } = await pool.query<MetricRow>(
@@ -93,7 +87,7 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
   });
 
   it('ends the windows at the newest parsed hour and keeps unknown hours out of coverage', async () => {
-    await load();
+    await loadMirageHours(pool);
     const summary = await computeMetrics(pool);
     assert.equal(summary.asOfHour, H0 + 3 * HOUR);
     assert.deepEqual(summary.windowHours, { parsed: 3, empty: 1, missing: 20 });
@@ -117,7 +111,7 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
   });
 
   it('ranks eligible markets when the window is covered', async () => {
-    await load();
+    await loadMirageHours(pool);
     await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
     assert.equal((await metricsFor(DIVINE)).get(1)?.activity_rank, 1);
     assert.equal((await metricsFor(CHROMATIC)).get(1)?.activity_rank, 2);
@@ -130,7 +124,7 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
   });
 
   it('replaces the snapshot of the calculation version', async () => {
-    await load();
+    await loadMirageHours(pool);
     await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
     await computeMetrics(pool);
     const { rows } = await pool.query<{ as_of: string; calc_version: number }>(
@@ -141,7 +135,7 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
   });
 
   it('uses parsed hours only', async () => {
-    await load();
+    await loadMirageHours(pool);
     // A newer fetched hour that has not been parsed yet does not move the windows.
     await ingest(pool, new FakeExchange(5), { maxHours: 1, start: { kind: 'hour', cursor: H0 } });
     assert.equal((await pool.query('SELECT 1 FROM raw_digests WHERE parser_version IS NULL')).rowCount, 1);
@@ -149,14 +143,43 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
   });
 
   it('refuses to run concurrently', async () => {
-    await load();
+    await loadMirageHours(pool);
     await withMetricsLock(pool, async () => {
       await assert.rejects(computeMetrics(pool), ConcurrentRunError);
     });
   });
 
+  it('skips private leagues', async () => {
+    await loadMirageHours(pool);
+    // One more hour with the same Chaos/Divine market in Mirage and in a private league.
+    const hour = H0 + 4 * HOUR;
+    const markets = ['Mirage', 'Limey Whelps (PL86569)'].map((league) => marketJson(league, CHAOS_PATH, DIVINE, ['300', '1']));
+    const exchange = new FakeExchange(5);
+    exchange.overrides.set(hour, { url: 'fake', status: 200, body: `{"next_change_id":${hour + HOUR},"markets":[${markets.join(',')}]}` });
+    await ingest(pool, exchange, { maxHours: 1, start: { kind: 'hour', cursor: H0 } });
+    await parsePending(pool, { itemNames: new Map() });
+
+    const summary = await computeMetrics(pool);
+    assert.equal(summary.asOfHour, hour);
+    assert.equal(summary.leagues, 1);
+    const { rows } = await pool.query<{ name: string }>(
+      'SELECT DISTINCT l.name FROM market_metrics m JOIN leagues l ON l.id = m.league_id',
+    );
+    assert.deepEqual(rows, [{ name: 'Mirage' }]);
+  });
+
+  it('marks private leagues by their (PL<number>) suffix', async () => {
+    const names = ['Allflame', 'Phrecia 2.0', 'HC Ruthless Allflame', 'Limey Whelps (PL86569)', 'Odd (PL)', 'X (PL1) y'];
+    await pool.query(`INSERT INTO leagues (realm, name) SELECT 'pc', unnest($1::text[])`, [names]);
+    const { rows } = await pool.query<{ name: string; private: boolean }>('SELECT name, private FROM leagues ORDER BY id');
+    assert.deepEqual(
+      rows.map((r) => [r.name, r.private]),
+      names.map((name) => [name, name === 'Limey Whelps (PL86569)']),
+    );
+  });
+
   it('categorizes items by their Metadata path', async () => {
-    await load();
+    await loadMirageHours(pool);
     const { rows } = await pool.query<{ category: string }>('SELECT category FROM items WHERE metadata_path = $1', [
       CHAOS_PATH,
     ]);
