@@ -45,3 +45,8 @@ export function snapshotFromBaseItems(baseItems: unknown, retrievedAt: Date): It
   }
   return { source: REPOE_BASE_ITEMS_URL, retrieved_at: retrievedAt.toISOString(), names };
 }
+
+/** What to show for an item: its display name, or the last segment of its Metadata path when the name is unknown. */
+export function itemLabel(metadataPath: string, displayName: string | null | undefined): string {
+  return displayName || metadataPath.slice(metadataPath.lastIndexOf('/') + 1);
+}
