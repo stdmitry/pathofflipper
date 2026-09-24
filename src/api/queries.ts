@@ -7,7 +7,10 @@ import {
   basePerHour,
   CALC_VERSION,
   coverage,
+  flipGold,
+  HOLD_SHARE,
   isStale,
+  LOOKBACK_HOURS,
   persistence,
   quotePerHour,
   sourceAgeHours,
@@ -33,11 +36,18 @@ export const UNITS = {
   persistence: 'hours with trades / covered hours',
   volatility: 'quote-volume-weighted standard deviation of log hourly rates (0.05 is about ±5%)',
   score: '(high − low) / low × turnover_per_hour, in quote units per hour; orders eligible markets for the rank',
+  gold_per_flip:
+    'gold to buy one unit at the low and sell it at the high; an order costs the wanted item fee per unit wanted',
+  quote_per_1k_gold: 'quote units earned per 1,000 gold on that round trip, from the range extremes (an upper bound)',
+  held:
+    `1h window: of the ${LOOKBACK_HOURS} previous hours, those with trades (checked) and those whose own margin was at ` +
+    `least ${HOLD_SHARE * 100}% of the newest hour's (hours); moving means the price drifted by more than the margin, ` +
+    'so the gap is likely a price move; moving markets are not ranked, and the score counts only the held share',
   stock: 'sampled quantity in unfilled orders, in units of that item; not trade liquidity',
   source_age_hours: `hours since the newest source hour ended; stale after ${STALE_AFTER_HOURS}`,
 } as const;
 
-interface Snapshot {
+export interface Snapshot {
   runId: string;
   asOfHour: number;
   computedAt: Date;
@@ -59,7 +69,7 @@ export async function dataVersion(pool: pg.Pool): Promise<string> {
   return `${rows[0]!.run}-${rows[0]!.parsed}`;
 }
 
-async function snapshot(pool: pg.Pool, quotePath: string): Promise<Snapshot | undefined> {
+export async function snapshot(pool: pg.Pool, quotePath: string): Promise<Snapshot | undefined> {
   const { rows } = await pool.query<{ id: string; as_of: string; computed_at: Date; calc_version: number; quote_item_id: number }>(
     `SELECT r.id, extract(epoch FROM r.as_of_hour)::bigint AS as_of, r.computed_at, r.calc_version, r.quote_item_id
      FROM metric_runs r JOIN items i ON i.id = r.quote_item_id
@@ -85,7 +95,7 @@ function freshness(asOfHour: number | undefined, now: Date) {
   };
 }
 
-function snapshotMeta(snap: Snapshot | undefined, now: Date) {
+export function snapshotMeta(snap: Snapshot | undefined, now: Date) {
   return {
     ...freshness(snap?.asOfHour, now),
     computed_at: snap?.computedAt.toISOString() ?? null,
@@ -93,15 +103,15 @@ function snapshotMeta(snap: Snapshot | undefined, now: Date) {
   };
 }
 
-function rationalJson(value: Rational | null) {
+export function rationalJson(value: Rational | null) {
   return value && { num: String(value.num), den: String(value.den), value: toNumber(value) };
 }
 
-function storedRational(num: string | null, den: string | null): Rational | null {
+export function storedRational(num: string | null, den: string | null): Rational | null {
   return num === null || den === null ? null : { num: BigInt(num), den: BigInt(den) };
 }
 
-async function leagueId(pool: pg.Pool, name: string): Promise<number> {
+export async function leagueId(pool: pg.Pool, name: string): Promise<number> {
   // Private leagues are stored but not served.
   const { rows } = await pool.query<{ id: number }>('SELECT id FROM leagues WHERE realm = $1 AND name = $2 AND NOT private', [
     REALM,
@@ -151,6 +161,9 @@ const SORT_SQL: Record<MarketSort, string> = {
   high: 'm.high_rate_num::numeric / m.high_rate_den',
   range: 'm.high_rate_num::numeric / m.high_rate_den - m.low_rate_num::numeric / m.low_rate_den',
   score: 'm.rank_score',
+  gold: 'm.gold_per_flip',
+  per_gold: 'm.quote_per_kgold',
+  held: 'm.held_hours',
   name: 'lower(coalesce(base.display_name, base.metadata_path))',
 };
 
@@ -172,6 +185,12 @@ interface MetricRow {
   high_rate_den: string | null;
   volatility: number | null;
   rank_score: number | null;
+  gold_per_flip: number | null;
+  quote_per_kgold: number | null;
+  held_hours: number | null;
+  checked_hours: number | null;
+  price_drift: number | null;
+  moving: boolean | null;
   activity_rank: number | null;
 }
 
@@ -193,7 +212,24 @@ function metricsJson(m: WindowMetrics) {
   };
 }
 
-function itemJson(path: string, name: string | null, category: string) {
+/** A history window's summary: the market list fields plus the gold figures computed from current fees. */
+function summaryJson(m: WindowMetrics, baseFee: number | null, quoteFee: number | null) {
+  const gold = flipGold(m, baseFee, quoteFee);
+  return {
+    ...metricsJson(m),
+    gold_per_flip: gold?.goldPerFlip ?? null,
+    quote_per_1k_gold: gold?.quotePerKgold ?? null,
+    gold_fees: { base: baseFee, quote: quoteFee },
+  };
+}
+
+/** The held check as JSON, or null outside the 1h window. */
+export function heldJson(hours: number | null, checked: number | null, drift: number | null, moving: boolean | null) {
+  if (hours === null || checked === null || moving === null) return null;
+  return { hours, checked, lookback: LOOKBACK_HOURS, drift, moving };
+}
+
+export function itemJson(path: string, name: string | null, category: string) {
   return { name: itemLabel(path, name), path, category, named: name !== null };
 }
 
@@ -228,7 +264,8 @@ export async function listMarkets(pool: pg.Pool, params: MarketListParams, now: 
   const { rows } = await pool.query<MetricRow>(
     `SELECT count(*) OVER () AS total, base.metadata_path, base.display_name, base.category, m.window_hours,
        m.covered_hours, m.traded_hours, m.base_volume, m.quote_volume, m.rate_num, m.rate_den, m.low_rate_num,
-       m.low_rate_den, m.high_rate_num, m.high_rate_den, m.volatility, m.rank_score, m.activity_rank
+       m.low_rate_den, m.high_rate_num, m.high_rate_den, m.volatility, m.rank_score, m.gold_per_flip,
+       m.quote_per_kgold, m.held_hours, m.checked_hours, m.price_drift, m.moving, m.activity_rank
      FROM market_metrics m
      JOIN pairs p ON p.id = m.pair_id
      JOIN items base ON base.id = CASE WHEN p.item_a_id = $4 THEN p.item_b_id ELSE p.item_a_id END
@@ -243,6 +280,9 @@ export async function listMarkets(pool: pg.Pool, params: MarketListParams, now: 
       item: itemJson(row.metadata_path, row.display_name, row.category),
       rank: row.activity_rank,
       score: row.rank_score,
+      gold_per_flip: row.gold_per_flip,
+      quote_per_1k_gold: row.quote_per_kgold,
+      held: heldJson(row.held_hours, row.checked_hours, row.price_drift, row.moving),
       eligible: row.activity_rank !== null,
       ...metricsJson({
         windowHours: row.window_hours,
@@ -278,8 +318,11 @@ export async function marketHistory(pool: pg.Pool, basePath: string, params: His
     quote_id: number;
     display_name: string | null;
     category: string;
+    base_fee: number | null;
+    quote_fee: number | null;
   }>(
-    `SELECT p.id AS pair_id, p.item_a_id, p.item_b_id, q.id AS quote_id, base.display_name, base.category
+    `SELECT p.id AS pair_id, p.item_a_id, p.item_b_id, q.id AS quote_id, base.display_name, base.category,
+       base.gold_fee AS base_fee, q.gold_fee AS quote_fee
      FROM items base, items q, pairs p
      WHERE base.metadata_path = $1 AND q.metadata_path = $2
        AND ((p.item_a_id, p.item_b_id) = (base.id, q.id) OR (p.item_a_id, p.item_b_id) = (q.id, base.id))`,
@@ -355,7 +398,7 @@ export async function marketHistory(pool: pg.Pool, basePath: string, params: His
     data: {
       id: encodeMarketId(basePath),
       item,
-      summary: metricsJson(windowMetrics(hours)),
+      summary: summaryJson(windowMetrics(hours), market.base_fee, market.quote_fee),
       hours: hours.map(({ hour, status, quoted }) => ({
         hour: hourIso(hour),
         status,

@@ -11,6 +11,10 @@ import {
   type MarketHour,
   persistence,
   quotePerHour,
+  flipGold,
+  heldCheck,
+  hourMargin,
+  LOOKBACK_HOURS,
   rankMarkets,
   rankScore,
   sourceAgeHours,
@@ -171,43 +175,87 @@ function tradeRange(quote: number, base: number, low: number, high: number): Mar
 }
 
 describe('rankScore', () => {
-  it('is the relative range times Chaos per covered hour', () => {
-    // Low 300, high 330: a 10% range; 6,000 Chaos over 2 covered hours is 3,000 per hour.
+  it('is the relative range times Chaos per covered hour times Chaos per 1k gold', () => {
+    // Low 300, high 330: a 10% range; 6,000 Chaos over 2 covered hours is 3,000 per hour; 5 Chaos per 1k gold.
     const m = windowMetrics([tradeRange(3000, 10, 300, 330), tradeRange(3000, 10, 310, 320), status('missing')]);
-    assert.ok(Math.abs(rankScore(m)! - 0.1 * 3000) < 1e-9);
+    assert.ok(Math.abs(rankScore(m, 5)! - 0.1 * 3000 * 5) < 1e-9);
   });
 
-  it('is 0 without a range and null without trades', () => {
-    assert.equal(rankScore(windowMetrics([trade(3000, 10)])), 0);
-    assert.equal(rankScore(windowMetrics([status('inactive')])), null);
-    assert.equal(rankScore(windowMetrics([status('missing')])), null);
+  it('is 0 without a range and null without trades or a gold figure', () => {
+    assert.equal(rankScore(windowMetrics([trade(3000, 10)]), 0), 0);
+    assert.equal(rankScore(windowMetrics([tradeRange(3000, 10, 300, 330)]), null), null);
+    assert.equal(rankScore(windowMetrics([status('inactive')]), 5), null);
+    assert.equal(rankScore(windowMetrics([status('missing')]), 5), null);
   });
 });
 
 describe('rankMarkets', () => {
+  /** A market scored as the metrics run does, with the base item's gold fee (Chaos costs 15 per unit wanted). */
+  const market = (key: string, hours: MarketHour[], baseFee: number | null = 100) => {
+    const metrics = windowMetrics(hours);
+    return { key, sortKey: key, metrics, score: rankScore(metrics, flipGold(metrics, baseFee, 15)?.quotePerKgold ?? null) };
+  };
+
   it('ranks eligible markets by score, then turnover, then key; ineligible markets get none', () => {
-    const market = (key: string, hours: MarketHour[]) => ({ key, sortKey: key, metrics: windowMetrics(hours) });
     const ranks = rankMarkets([
-      // 1,000 c/h with a 50% range: score 500.
+      // Same prices and turnover; the cheaper item to buy needs less gold per flip, so it earns more per gold.
+      market('cheap-fee', [tradeRange(9000, 30, 300, 330), tradeRange(9000, 30, 300, 330)], 25),
+      market('dear-fee', [tradeRange(9000, 30, 300, 330), tradeRange(9000, 30, 300, 330)], 5000),
+      // A wide range at low turnover: 50% × 1,000 c/h × (100 / 4,600 × 1,000).
       market('wide', [tradeRange(1000, 5, 200, 300), tradeRange(1000, 5, 200, 300)]),
-      // 90,000 c/h with a 1% range: score 900, despite a much smaller range.
-      market('busy', [tradeRange(90000, 300, 300, 303), tradeRange(90000, 300, 300, 303)]),
-      // 500 c/h, no range: score 0, ties broken by turnover.
+      // No range: score 0, ties broken by turnover.
       market('flat-big', [trade(500, 1), trade(500, 1)]),
       market('flat-small', [trade(200, 1), trade(200, 1)]),
-      // Trades in exactly half its hours (still eligible): 1,000 c/h with a 900% range, score 9,000.
-      market('patchy', [tradeRange(2000, 1, 100, 1000), status('inactive')]),
+      // Eligible but no known gold fee: no score, ranked after every scored market.
+      market('no-fee', [tradeRange(90000, 300, 300, 400), tradeRange(90000, 300, 300, 400)], null),
       // Too little turnover to be eligible, whatever its range.
       market('thin', [tradeRange(50, 1, 10, 500), tradeRange(50, 1, 10, 500)]),
       market('dead', [status('listed'), status('listed')]),
     ]);
     assert.deepEqual([...ranks], [
-      ['patchy', 1],
-      ['busy', 2],
-      ['wide', 3],
+      ['wide', 1],
+      ['cheap-fee', 2],
+      ['dear-fee', 3],
       ['flat-big', 4],
       ['flat-small', 5],
+      ['no-fee', 6],
     ]);
+  });
+});
+
+describe('heldCheck', () => {
+  const m = (margin: number | null, price: number | null = 100) => ({ margin, price });
+
+  it('counts previous hours with at least half the newest margin, ignoring hours without trades', () => {
+    // Newest margin 20%: hours with 10% or more hold.
+    const held = heldCheck(m(0.2), [m(0.25), m(0.1), m(0.09), m(null, null), m(0.3), m(0.02)]);
+    assert.deepEqual([held.checkedHours, held.heldHours, held.moving], [5, 3, false]);
+    assert.equal(LOOKBACK_HOURS, 6);
+  });
+
+  it('flags a price that drifted by more than the margin as moving', () => {
+    // A 10% margin while the price climbed from 100 to 130 over the hours: a move, not a lasting gap.
+    const moving = heldCheck(m(0.1, 130), [m(0.1, 120), m(0.1, 110), m(0.1, 100)]);
+    assert.ok(Math.abs(moving.drift! - 0.3) < 1e-12);
+    assert.equal(moving.moving, true);
+    // The same margin around a steady price holds.
+    const steady = heldCheck(m(0.1, 101), [m(0.1, 100), m(0.1, 102), m(0.1, 100)]);
+    assert.deepEqual([steady.heldHours, steady.moving], [3, false]);
+  });
+
+  it('holds nothing when the newest hour had no trades', () => {
+    const held = heldCheck(m(null, null), [m(0.2), m(0.3)]);
+    assert.deepEqual([held.checkedHours, held.heldHours, held.moving], [2, 0, false]);
+  });
+});
+
+describe('hourMargin', () => {
+  it('is an hour\'s own (high − low) / low and its rate', () => {
+    const hour = tradeRange(3000, 10, 280, 350);
+    const margin = hourMargin(hour.quoted);
+    assert.ok(Math.abs(margin.margin! - 0.25) < 1e-12);
+    assert.equal(margin.price, 300);
+    assert.deepEqual(hourMargin(undefined), { margin: null, price: null });
   });
 });
 

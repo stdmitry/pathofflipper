@@ -38,6 +38,9 @@ const market = {
   low_rate: rate(300),
   high_rate: rate(345),
   volatility: 0.0101,
+  // Divine fee 250 + Chaos fee 15 × 345 = 5,425 gold; (345 − 300) / 5,425 × 1,000 = 8.29 Chaos per 1k gold.
+  gold_per_flip: 5425,
+  quote_per_1k_gold: 8.2949,
 };
 
 describe('number formatting', () => {
@@ -95,7 +98,11 @@ describe('marketRow', () => {
       low: '300.0c',
       high: '345.0c',
       range: '45.0c',
-      score: '2M', // (345 − 300) / 300 × 13,437,690
+      score: '16.7M', // (345 − 300) / 300 × 13,437,690 × 8.2949
+      gold: '5425',
+      perGold: '8.3c',
+      held: DASH,
+      moving: false,
       turnover: '13.4Mc/h',
       units: '40.9k/h',
       traded: '12/18 h',
@@ -110,6 +117,8 @@ describe('marketRow', () => {
     const row = marketRow({ ...market, rank: null, eligible: false, covered_hours: 0, traded_hours: 0, coverage: 0,
       turnover_per_hour: null, units_per_hour: null, rate: null, low_rate: null, high_rate: null, volatility: null });
     assert.deepEqual([row.rank, row.low, row.high, row.range, row.turnover, row.units, row.volatility], [DASH, DASH, DASH, DASH, DASH, DASH, DASH]);
+    const noFees = marketRow({ ...market, gold_per_flip: null, quote_per_1k_gold: null });
+    assert.deepEqual([noFees.gold, noFees.perGold], [DASH, DASH]);
     assert.equal(row.lowCoverage, true);
   });
 });
@@ -163,22 +172,22 @@ describe('historySeries', () => {
 
 describe('page state in the address bar', () => {
   it('round-trips and omits defaults', () => {
-    const state = { ...DEFAULT_STATE, league: 'Hardcore Allflame', window: '1h' as const, sort: 'low' as const, q: 'scarab', offset: 50 };
+    const state = { ...DEFAULT_STATE, league: 'Hardcore Allflame', quote: 'flip' as const, window: '24h' as const, sort: 'margin' as const, q: 'scarab', offset: 50 };
     const search = searchFromState(state);
-    assert.equal(search, '?league=Hardcore+Allflame&window=1h&sort=low&q=scarab&offset=50');
+    assert.equal(search, '?league=Hardcore+Allflame&quote=flip&window=24h&sort=margin&q=scarab&offset=50');
     assert.deepEqual(stateFromSearch(search), state);
     assert.equal(searchFromState(DEFAULT_STATE), '');
   });
 
   it('falls back to defaults for invalid values', () => {
-    assert.deepEqual(stateFromSearch('?window=2h&sort=rate&offset=-5&history=90d&scope=x'), DEFAULT_STATE);
+    assert.deepEqual(stateFromSearch('?window=6h&sort=rate&offset=-5&history=90d&scope=x'), DEFAULT_STATE);
   });
 
   it('builds the market list query', () => {
     assert.deepEqual(marketQuery({ ...DEFAULT_STATE, league: 'Allflame', quote: 'divine', q: 'orb', order: 'desc' }, 50), {
       league: 'Allflame',
       quote: 'divine',
-      window: '24h',
+      window: '1h',
       scope: 'eligible',
       sort: 'rank',
       limit: '50',
