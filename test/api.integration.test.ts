@@ -155,6 +155,21 @@ describe('read API (PostgreSQL)', { skip }, () => {
       assert.equal(wildcard.body.meta.total, 0, '% is matched literally');
     });
 
+    it('serves Divine-quoted markets and their history', async () => {
+      await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR, quote: 'divine' });
+      const { body } = await get('/api/markets?league=Mirage&quote=divine&window=1h');
+      assert.equal(body.meta.quote, 'divine');
+      assert.deepEqual(body.data.map((m: Json) => [m.item.name, m.rank]), [['Chaos Orb', 1]]);
+      assert.ok(body.data[0].low_rate.value < 0.01, 'a Chaos Orb is worth a fraction of a Divine');
+
+      const chaosId = encodeMarketId('Metadata/Items/Currency/CurrencyRerollRare');
+      const history = await get(`/api/markets/${chaosId}/history?league=Mirage&quote=divine`);
+      assert.equal(history.status, 200);
+      assert.equal(history.body.data.summary.traded_hours, 3);
+      // Divine has no Divine market, so its id does not resolve when quoted in Divine.
+      assert.equal((await get(`/api/markets/${encodeMarketId(DIVINE)}/history?league=Mirage&quote=divine`)).status, 404);
+    });
+
     it('returns one point per hour with explicit gaps', async () => {
       const { status, body } = await get(`/api/markets/${encodeMarketId(DIVINE)}/history?league=Mirage`);
       assert.equal(status, 200);

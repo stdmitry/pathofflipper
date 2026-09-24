@@ -16,7 +16,7 @@ export const ELIGIBILITY = {
   minCoverage: 0.75,
   /** Share of covered hours that must have trades. */
   minPersistence: 0.5,
-  /** Quote units (Chaos Orbs) traded per covered hour. */
+  /** Chaos Orbs traded per covered hour; each quote sets its own minimum (src/market/quotes.ts). */
   minQuotePerHour: 100,
 } as const;
 
@@ -102,13 +102,16 @@ export function basePerHour(m: WindowMetrics): number | null {
   return m.coveredHours === 0 ? null : Number(m.baseVolume) / m.coveredHours;
 }
 
-/** Whether a market passes the default screen. Staleness is checked by readers, since it depends on read time. */
-export function isEligible(m: WindowMetrics): boolean {
+/**
+ * Whether a market passes the default screen, with the minimum turnover in quote units per hour. Staleness is checked
+ * by readers, since it depends on read time.
+ */
+export function isEligible(m: WindowMetrics, minQuotePerHour: number = ELIGIBILITY.minQuotePerHour): boolean {
   return (
     m.rate !== null &&
     coverage(m) >= ELIGIBILITY.minCoverage &&
     persistence(m) >= ELIGIBILITY.minPersistence &&
-    (quotePerHour(m) ?? 0) >= ELIGIBILITY.minQuotePerHour
+    (quotePerHour(m) ?? 0) >= minQuotePerHour
   );
 }
 
@@ -130,8 +133,11 @@ export function rankScore(m: WindowMetrics): number | null {
  * Ranks for one league and window: eligible markets by rankScore, highest first, then turnover, then key for a stable
  * order. Ineligible markets get no rank.
  */
-export function rankMarkets<K>(markets: { key: K; sortKey: string; metrics: WindowMetrics }[]): Map<K, number> {
-  const eligible = markets.filter((m) => isEligible(m.metrics));
+export function rankMarkets<K>(
+  markets: { key: K; sortKey: string; metrics: WindowMetrics }[],
+  minQuotePerHour: number = ELIGIBILITY.minQuotePerHour,
+): Map<K, number> {
+  const eligible = markets.filter((m) => isEligible(m.metrics, minQuotePerHour));
   eligible.sort(
     (x, y) =>
       (rankScore(y.metrics) ?? 0) - (rankScore(x.metrics) ?? 0) ||

@@ -111,11 +111,12 @@ async function loadMarkets() {
   try {
     const body = await api('/api/markets', view.marketQuery(state, PAGE_SIZE), request.signal);
     total = body.meta.total;
-    renderRows(body.data.map(view.marketRow));
+    const unit = view.QUOTE_UNITS[state.quote];
+    renderRows(body.data.map((/** @type {view.Market} */ m) => view.marketRow(m, state.quote)));
     $('table-meta').textContent =
       `${state.window} window ending ${view.hourText(body.meta.as_of_hour)} · calculation v${body.meta.calc_version} · ` +
-      'ranked by score = (High − Low) / Low × Chaos/h, among markets with ≥75% coverage, trades in ≥50% of hours ' +
-      'and ≥100c/h';
+      `ranked by score = (High − Low) / Low × ${unit.column}, among markets with ≥75% coverage, trades in ≥50% of ` +
+      `hours and ≥${unit.minPerHour}`;
   } catch (error) {
     if (isAbort(error)) return;
     total = 0;
@@ -182,6 +183,10 @@ function syncControls() {
     /** @type {HTMLInputElement} */ (input).checked = /** @type {HTMLInputElement} */ (input).value === state.window;
   }
   /** @type {HTMLInputElement} */ ($('scope')).checked = state.scope === 'all';
+  for (const input of form.querySelectorAll('input[name="quote"]')) {
+    /** @type {HTMLInputElement} */ (input).checked = /** @type {HTMLInputElement} */ (input).value === state.quote;
+  }
+  $('turnover-head').textContent = view.QUOTE_UNITS[state.quote].column;
   const q = /** @type {HTMLInputElement} */ ($('q'));
   if (document.activeElement !== q) q.value = state.q;
   /** @type {HTMLSelectElement} */ ($('league')).value = state.league;
@@ -214,7 +219,7 @@ async function loadHistory() {
   try {
     const history = await api(
       `/api/markets/${encodeURIComponent(state.market)}/history`,
-      { league: state.league, window: state.history },
+      { league: state.league, quote: state.quote, window: state.history },
       request.signal,
     );
     renderDetail(history);
@@ -232,21 +237,22 @@ function renderDetail(history) {
   const { item, summary } = history.data;
   $('detail-title').textContent = item.name;
   const series = view.historySeries(history.data);
-  const row = view.marketRow({ ...summary, id: history.data.id, item, rank: null, eligible: false });
+  const row = view.marketRow({ ...summary, id: history.data.id, item, rank: null, eligible: false }, state.quote);
+  const unit = view.QUOTE_UNITS[state.quote];
 
   /** @type {[string, string, string][]} */
   const stats = [
     ['Low', row.low, 'Lowest price paid in a trade during this window'],
     ['High', row.high, 'Highest price paid in a trade during this window'],
     ['High − Low', row.range, 'Highest minus lowest price paid; not a spread you can capture'],
-    ['Score', row.score, '(High − Low) / Low × Chaos/h'],
-    ['Chaos/h', row.turnover, 'Chaos traded per hour with data'],
+    ['Score', row.score, `(High − Low) / Low × ${unit.column}`],
+    [unit.column, row.turnover, `${unit.name} traded per hour with data`],
     ['Units/h', row.units, `${item.name} traded per hour with data`],
     ['Traded', row.traded, 'Hours with trades / hours with data'],
     ['Coverage', row.coverage, 'Hours with data / hours in the window'],
     ['Volatility', row.volatility, 'Spread of hourly rates, weighted by volume'],
   ];
-  const chartBox = el('div', { class: 'chart', role: 'img', 'aria-label': `Hourly low and high price and Chaos traded for ${item.name}` });
+  const chartBox = el('div', { class: 'chart', role: 'img', 'aria-label': `Hourly low and high price and ${unit.name} traded for ${item.name}` });
   const strip = el(
     'div',
     { class: 'strip', 'aria-hidden': 'true' },
@@ -273,7 +279,7 @@ function renderDetail(history) {
         'Prices are what past trades paid, not what you can trade at now.',
     ),
   );
-  if (series.high.some((v) => v !== null)) chart = drawHistory(chartBox, series);
+  if (series.high.some((v) => v !== null)) chart = drawHistory(chartBox, series, state.quote);
   else chartBox.replaceChildren(el('p', { class: 'empty' }, 'No trades in this window.'));
 }
 
@@ -291,6 +297,11 @@ function bindEvents() {
   $('controls').addEventListener('change', (event) => {
     const input = /** @type {HTMLInputElement} */ (event.target);
     if (input.name === 'window') update({ window: /** @type {view.State['window']} */ (input.value), offset: 0 });
+    else if (input.name === 'quote') {
+      // A market id names the other item, which may not trade against the new quote, so the detail closes.
+      update({ quote: /** @type {view.State['quote']} */ (input.value), offset: 0, market: '' }, { push: true });
+      void loadHistory();
+    }
     else if (input.name === 'scope') update({ scope: input.checked ? 'all' : 'eligible', offset: 0 });
     else return;
     void loadMarkets();

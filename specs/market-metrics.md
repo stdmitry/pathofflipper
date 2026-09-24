@@ -6,7 +6,7 @@ Status: calculation version 2, 2026-09-24 ([#4](https://github.com/stdmitry/path
 
 ## Scope
 
-- PoE 1 PC, every **public** league present in the window, and markets **quoted directly in Chaos Orbs** (Chaos Orb is one of the pair's two items). Other pairs stay in `pair_hours` for later. Private leagues, named `… (PL<number>)` (`leagues.private`), are skipped: 2,002 of the first 2,034 stored leagues were private, and they are not markets a player can join.
+- PoE 1 PC, every **public** league present in the window, and markets **quoted directly in Chaos Orbs or in Divine Orbs**, screened separately (`src/market/quotes.ts`). Each quote has its own snapshot and ranking. Prices, turnover and scores are in that quote's units, so they are not compared across quotes, and nothing is converted between them. (Chaos Orb is one of the pair's two items). Other pairs stay in `pair_hours` for later. Private leagues, named `… (PL<number>)` (`leagues.private`), are skipped: 2,002 of the first 2,034 stored leagues were private, and they are not markets a player can join.
 - Rates read as **Chaos per one unit of the other item** (the base). The upstream pair order is ignored: `quoteHour` re-orients every market.
 - Windows are the last **1, 6 and 24 hours**, ending with the as-of hour. The as-of hour is the newest parsed hour by default.
 
@@ -46,7 +46,7 @@ A market is **eligible** for a window when all of these hold:
 |---|---|---|
 | Coverage | ≥ 75% | Keeps windows that overlap an outage or a collection gap from being compared with complete ones. At 24h this tolerates 6 unknown hours. |
 | Persistence | ≥ 50% | Flipping needs a market that trades most hours, not one burst. |
-| Turnover | ≥ 100 Chaos per covered hour | Removes markets that trade a few Chaos worth per hour. |
+| Turnover | ≥ 100 Chaos, or ≥ 0.3 Divine, per covered hour | Removes markets that trade a few Chaos worth per hour. The Divine minimum is about the same value at the ~330 Chaos per Divine seen in 2026. |
 | Rate | present | At least one trade in the window. |
 
 Eligible markets are ranked per league and window by their **score**, highest first:

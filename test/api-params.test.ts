@@ -55,7 +55,8 @@ describe('parseMarketListParams', () => {
     rejects(() => parseMarketListParams(params('')), 'league');
     rejects(() => parseMarketListParams(params('league=')), 'league');
     rejects(() => parseMarketListParams(params('league=M&realm=xbox')), 'realm');
-    rejects(() => parseMarketListParams(params('league=M&quote=divine')), 'quote');
+    assert.equal(parseMarketListParams(params('league=M&quote=divine')).quote, 'divine');
+    rejects(() => parseMarketListParams(params('league=M&quote=exalted')), 'quote');
   });
 
   it('rejects unknown, repeated and oversized parameters', () => {

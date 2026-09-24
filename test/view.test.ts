@@ -21,6 +21,25 @@ import {
 
 const rate = (value: number) => ({ num: String(value), den: '1', value });
 
+const market = {
+  id: 'abc',
+  item: { name: 'Divine Orb', path: 'Metadata/Items/Currency/CurrencyModValues', category: 'Currency', named: true },
+  rank: 1,
+  eligible: true,
+  window_hours: 24,
+  covered_hours: 18,
+  traded_hours: 12,
+  coverage: 0.75,
+  persistence: 12 / 18,
+  turnover_per_hour: 13437690,
+  units_per_hour: 40897.9,
+  volume: { quote: '1', base: '1' },
+  rate: rate(328.5666),
+  low_rate: rate(300),
+  high_rate: rate(345),
+  volatility: 0.0101,
+};
+
 describe('number formatting', () => {
   it('compacts large numbers with at most one decimal', () => {
     assert.deepEqual(
@@ -37,6 +56,13 @@ describe('number formatting', () => {
     assert.equal(rateText({ num: '1', den: '14', value: 1 / 14 }), '14.0 per c');
     assert.equal(rateText({ num: '200', den: '1937', value: 200 / 1937 }), '9.7 per c');
     assert.equal(rateText(null), DASH);
+  });
+
+  it('shows Divine prices in div', () => {
+    assert.equal(rateText(rate(2.34), 'divine'), '2.3 div');
+    assert.equal(rateText({ num: '1', den: '330', value: 1 / 330 }, 'divine'), '330.0 per div');
+    assert.equal(differenceText(rate(2), rate(2.5), 'divine'), '0.5 div');
+    assert.equal(marketRow({ ...market, turnover_per_hour: 42.25 }, 'divine').turnover, '42.3 div/h');
   });
 
   it('shows high minus low in the unit the prices are shown in', () => {
@@ -58,24 +84,6 @@ describe('number formatting', () => {
 });
 
 describe('marketRow', () => {
-  const market = {
-    id: 'abc',
-    item: { name: 'Divine Orb', path: 'Metadata/Items/Currency/CurrencyModValues', category: 'Currency', named: true },
-    rank: 1,
-    eligible: true,
-    window_hours: 24,
-    covered_hours: 18,
-    traded_hours: 12,
-    coverage: 0.75,
-    persistence: 12 / 18,
-    turnover_per_hour: 13437690,
-    units_per_hour: 40897.9,
-    volume: { quote: '1', base: '1' },
-    rate: rate(328.5666),
-    low_rate: rate(300),
-    high_rate: rate(345),
-    volatility: 0.0101,
-  };
 
   it('turns a market into display cells', () => {
     assert.deepEqual(marketRow(market), {
@@ -167,8 +175,9 @@ describe('page state in the address bar', () => {
   });
 
   it('builds the market list query', () => {
-    assert.deepEqual(marketQuery({ ...DEFAULT_STATE, league: 'Allflame', q: 'orb', order: 'desc' }, 50), {
+    assert.deepEqual(marketQuery({ ...DEFAULT_STATE, league: 'Allflame', quote: 'divine', q: 'orb', order: 'desc' }, 50), {
       league: 'Allflame',
+      quote: 'divine',
       window: '24h',
       scope: 'eligible',
       sort: 'rank',

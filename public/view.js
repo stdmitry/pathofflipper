@@ -58,27 +58,39 @@ function trim(n, digits) {
   return String(Number(n.toFixed(digits)));
 }
 
+/** @typedef {'chaos' | 'divine'} Quote */
+
+/** How each quote currency reads: after a price, in "per …" and after a per-hour amount. */
+export const QUOTE_UNITS = /** @type {const} */ ({
+  chaos: { name: 'Chaos', price: 'c', per: 'c', perHour: 'c/h', column: 'Chaos/h', minPerHour: '100c/h' },
+  divine: { name: 'Divine', price: ' div', per: 'div', perHour: ' div/h', column: 'Div/h', minPerHour: '0.3 div/h' },
+});
+
 /**
- * A Chaos rate for display, with one decimal. Items worth at least 1 Chaos read "328.6c"; cheaper ones read as how
- * many you get per Chaos ("14.5 per c"), which is how players quote them.
+ * A price in the quote currency, with one decimal. Items worth at least 1 unit of the quote read "328.6c" or
+ * "2.3 div"; cheaper ones read as how many you get per unit ("14.5 per c"), which is how players quote them.
  * @param {Rate | null} rate
+ * @param {Quote} [quote]
  */
-export function rateText(rate) {
+export function rateText(rate, quote = 'chaos') {
   if (!rate || !(rate.value > 0)) return DASH;
-  if (rate.value >= 1) return `${rate.value.toFixed(1)}c`;
-  return `${(1 / rate.value).toFixed(1)} per c`;
+  const unit = QUOTE_UNITS[quote];
+  if (rate.value >= 1) return `${rate.value.toFixed(1)}${unit.price}`;
+  return `${(1 / rate.value).toFixed(1)} per ${unit.per}`;
 }
 
 /**
- * High minus low, in the unit the prices are shown in: Chaos when the high is at least 1 Chaos ("23.0c"), otherwise
- * items per Chaos ("1.0 per c" between 10.0 and 9.0 per c), where a Chaos difference would round to 0.0.
+ * High minus low, in the unit the prices are shown in: the quote when the high is at least 1 unit ("23.0c"),
+ * otherwise items per quote unit ("1.0 per c" between 10.0 and 9.0 per c), where a difference would round to 0.0.
  * @param {Rate | null} low
  * @param {Rate | null} high
+ * @param {Quote} [quote]
  */
-export function differenceText(low, high) {
+export function differenceText(low, high, quote = 'chaos') {
   if (!low || !high || !(low.value > 0) || !(high.value > 0)) return DASH;
-  if (high.value >= 1) return `${(high.value - low.value).toFixed(1)}c`;
-  return `${(1 / low.value - 1 / high.value).toFixed(1)} per c`;
+  const unit = QUOTE_UNITS[quote];
+  if (high.value >= 1) return `${(high.value - low.value).toFixed(1)}${unit.price}`;
+  return `${(1 / low.value - 1 / high.value).toFixed(1)} per ${unit.per}`;
 }
 
 /**
@@ -117,20 +129,20 @@ export function hourText(iso) {
   return iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : DASH;
 }
 
-/** One table row, every cell as display text. @param {Market} m */
-export function marketRow(m) {
+/** One table row, every cell as display text. @param {Market} m @param {Quote} [quote] */
+export function marketRow(m, quote = 'chaos') {
   return {
     id: m.id,
     rank: m.rank === null ? DASH : String(m.rank),
     name: m.item.name,
     category: m.item.category,
     unnamed: !m.item.named,
-    // The lowest and highest price actually paid in the window, in Chaos per item.
-    low: rateText(m.low_rate),
-    high: rateText(m.high_rate),
-    range: differenceText(m.low_rate, m.high_rate),
+    // The lowest and highest price actually paid in the window, in quote units per item.
+    low: rateText(m.low_rate, quote),
+    high: rateText(m.high_rate, quote),
+    range: differenceText(m.low_rate, m.high_rate, quote),
     score: compact(scoreOf(m)),
-    turnover: m.turnover_per_hour === null ? DASH : `${compact(m.turnover_per_hour)}c/h`,
+    turnover: m.turnover_per_hour === null ? DASH : `${compact(m.turnover_per_hour)}${QUOTE_UNITS[quote].perHour}`,
     units: m.units_per_hour === null ? DASH : `${compact(m.units_per_hour)}/h`,
     traded: `${m.traded_hours}/${m.covered_hours} h`,
     coverage: percentText(m.coverage),
@@ -186,7 +198,7 @@ export function statusCounts(statuses) {
 
 /**
  * @typedef {{
- *   league: string, window: '1h' | '6h' | '24h', scope: 'eligible' | 'all',
+ *   league: string, quote: Quote, window: '1h' | '6h' | '24h', scope: 'eligible' | 'all',
  *   sort: 'rank' | 'score' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'low' | 'high' | 'range' | 'name',
  *   order: '' | 'asc' | 'desc',
  *   q: string, offset: number, market: string, history: '24h' | '7d' | '30d'
@@ -196,6 +208,7 @@ export function statusCounts(statuses) {
 /** @type {Readonly<State>} */
 export const DEFAULT_STATE = Object.freeze({
   league: '',
+  quote: 'chaos',
   window: '24h',
   scope: 'eligible',
   sort: 'rank',
@@ -207,6 +220,7 @@ export const DEFAULT_STATE = Object.freeze({
 });
 
 const CHOICES = /** @type {Record<string, readonly string[]>} */ ({
+  quote: ['chaos', 'divine'],
   window: ['1h', '6h', '24h'],
   scope: ['eligible', 'all'],
   sort: ['rank', 'score', 'turnover', 'units', 'persistence', 'volatility', 'low', 'high', 'range', 'name'],
@@ -247,6 +261,7 @@ export function marketQuery(state, limit) {
   /** @type {Record<string, string>} */
   const query = {
     league: state.league,
+    quote: state.quote,
     window: state.window,
     scope: state.scope,
     sort: state.sort,

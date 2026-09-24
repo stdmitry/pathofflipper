@@ -1,5 +1,5 @@
 // The market history chart, drawn with the vendored uPlot (global `uPlot`, loaded before this module).
-import { compact, hourText } from './view.js';
+import { compact, hourText, QUOTE_UNITS } from './view.js';
 
 /** @param {string} name */
 function cssVar(name) {
@@ -7,13 +7,15 @@ function cssVar(name) {
 }
 
 /**
- * Draws each hour's lowest and highest traded price (lines with the band between them) and Chaos turnover (bars).
+ * Draws each hour's lowest and highest traded price (lines with the band between them) and quote turnover (bars).
  * Hours without trades are null, so the lines break at gaps instead of interpolating across them.
  * @param {HTMLElement} container
  * @param {ReturnType<typeof import('./view.js').historySeries>} series
+ * @param {import('./view.js').Quote} [quote]
  * @returns {uPlot}
  */
-export function drawHistory(container, series) {
+export function drawHistory(container, series, quote = 'chaos') {
+  const unit = QUOTE_UNITS[quote];
   container.textContent = '';
   const accent = cssVar('--accent');
   const band = cssVar('--band');
@@ -21,7 +23,7 @@ export function drawHistory(container, series) {
   const text = cssVar('--muted');
   const grid = cssVar('--grid');
   /** @type {(u: uPlot, v: number | null) => string} */
-  const rateValue = (_u, v) => (v === null || v === undefined ? '—' : `${v.toFixed(1)}c`);
+  const rateValue = (_u, v) => (v === null || v === undefined ? '—' : `${v.toFixed(1)}${unit.price}`);
   const axis = { stroke: text, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid, width: 1 } };
 
   /** @type {uPlot.Options} */
@@ -39,20 +41,20 @@ export function drawHistory(container, series) {
       { label: 'Low', scale: 'rate', stroke: accent, width: 1.5, value: rateValue },
       { label: 'High', scale: 'rate', stroke: accent, width: 1.5, dash: [4, 3], value: rateValue },
       {
-        label: 'Chaos traded',
+        label: `${unit.name} traded`,
         scale: 'turnover',
         stroke: bars,
         fill: bars,
         width: 0,
         points: { show: false },
         paths: uPlot.paths.bars?.({ size: [0.7, 24] }),
-        value: (_u, v) => (v === null ? '—' : `${compact(v)}c`),
+        value: (_u, v) => (v === null ? '—' : `${compact(v)}${unit.price}`),
       },
     ],
     bands: [{ series: [2, 1], fill: band }],
     axes: [
       { ...axis },
-      { ...axis, scale: 'rate', values: (_u, ticks) => ticks.map((t) => `${Number(t.toPrecision(3))}c`), size: 60 },
+      { ...axis, scale: 'rate', values: (_u, ticks) => ticks.map((t) => `${Number(t.toPrecision(3))}${unit.price}`), size: 64 },
       { ...axis, scale: 'turnover', side: 1, grid: { show: false }, values: (_u, ticks) => ticks.map((t) => compact(t)), size: 56 },
     ],
   };
