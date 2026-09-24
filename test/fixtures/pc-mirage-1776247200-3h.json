@@ -1,0 +1,340 @@
+{
+  "description": "PC, league Mirage, three consecutive completed hours from 2026-04-15 10:00 UTC. Each body is the stored raw response trimmed to 7 markets of this league; values are unmodified. market_count is the untrimmed count.",
+  "hours": [
+    {
+      "source_hour": 1776247200,
+      "market_count": 1870,
+      "body": {
+        "markets": [
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/Currency/CurrencyModValues",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollRare",
+              "Metadata/Items/Currency/CurrencyModValues"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyModValues": 1,
+              "Metadata/Items/Currency/CurrencyRerollRare": 305
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyModValues": 4865,
+              "Metadata/Items/Currency/CurrencyRerollRare": 4518606
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyModValues": 1,
+              "Metadata/Items/Currency/CurrencyRerollRare": 330
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyModValues": 9024,
+              "Metadata/Items/Currency/CurrencyRerollRare": 5075807
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyModValues": 40466,
+              "Metadata/Items/Currency/CurrencyRerollRare": 13204338
+            }
+          },
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollSocketColours|Metadata/Items/Currency/CurrencyRerollRare",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollSocketColours",
+              "Metadata/Items/Currency/CurrencyRerollRare"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 1,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 12
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 43760,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 255000
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 1,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 18
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 47476,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 281019
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 12787,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 194362
+            }
+          },
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/Mushrune5|Metadata/Items/Currency/CurrencyRerollMagic",
+            "market_pair": [
+              "Metadata/Items/Currency/Mushrune5",
+              "Metadata/Items/Currency/CurrencyRerollMagic"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/Mushrune5": 1,
+              "Metadata/Items/Currency/CurrencyRerollMagic": 2
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/Mushrune5": 0,
+              "Metadata/Items/Currency/CurrencyRerollMagic": 0
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/Mushrune5": 1,
+              "Metadata/Items/Currency/CurrencyRerollMagic": 2
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/Mushrune5": 0,
+              "Metadata/Items/Currency/CurrencyRerollMagic": 0
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/Mushrune5": 44,
+              "Metadata/Items/Currency/CurrencyRerollMagic": 88
+            }
+          }
+        ],
+        "next_change_id": 1776250800
+      }
+    },
+    {
+      "source_hour": 1776250800,
+      "market_count": 1846,
+      "body": {
+        "markets": [
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/Currency/CurrencyDuplicate",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollRare",
+              "Metadata/Items/Currency/CurrencyDuplicate"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyDuplicate": 0,
+              "Metadata/Items/Currency/CurrencyRerollRare": 0
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyDuplicate": 0,
+              "Metadata/Items/Currency/CurrencyRerollRare": 399125
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyDuplicate": 0,
+              "Metadata/Items/Currency/CurrencyRerollRare": 0
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyDuplicate": 0,
+              "Metadata/Items/Currency/CurrencyRerollRare": 399125
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyDuplicate": 0,
+              "Metadata/Items/Currency/CurrencyRerollRare": 0
+            }
+          },
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/Currency/CurrencyModValues",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollRare",
+              "Metadata/Items/Currency/CurrencyModValues"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyModValues": 1,
+              "Metadata/Items/Currency/CurrencyRerollRare": 312
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyModValues": 3297,
+              "Metadata/Items/Currency/CurrencyRerollRare": 4750521
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyModValues": 1,
+              "Metadata/Items/Currency/CurrencyRerollRare": 334
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyModValues": 6688,
+              "Metadata/Items/Currency/CurrencyRerollRare": 5165912
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyModValues": 44520,
+              "Metadata/Items/Currency/CurrencyRerollRare": 14664079
+            }
+          },
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollSocketColours|Metadata/Items/Currency/CurrencyRerollRare",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollSocketColours",
+              "Metadata/Items/Currency/CurrencyRerollRare"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 4,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 51
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 39045,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 218624
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 1,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 18
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 43955,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 276334
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 16040,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 241540
+            }
+          },
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollSocketNumbers|Metadata/Items/Currency/CurrencyUpgradeToRareAndSetSockets",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollSocketNumbers",
+              "Metadata/Items/Currency/CurrencyUpgradeToRareAndSetSockets"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollSocketNumbers": 0,
+              "Metadata/Items/Currency/CurrencyUpgradeToRareAndSetSockets": 0
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollSocketNumbers": 0,
+              "Metadata/Items/Currency/CurrencyUpgradeToRareAndSetSockets": 0
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollSocketNumbers": 0,
+              "Metadata/Items/Currency/CurrencyUpgradeToRareAndSetSockets": 0
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollSocketNumbers": 0,
+              "Metadata/Items/Currency/CurrencyUpgradeToRareAndSetSockets": 0
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyRerollSocketNumbers": 0,
+              "Metadata/Items/Currency/CurrencyUpgradeToRareAndSetSockets": 0
+            }
+          }
+        ],
+        "next_change_id": 1776254400
+      }
+    },
+    {
+      "source_hour": 1776254400,
+      "market_count": 1924,
+      "body": {
+        "markets": [
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/Currency/CurrencyEssenceContempt3",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollRare",
+              "Metadata/Items/Currency/CurrencyEssenceContempt3"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 0,
+              "Metadata/Items/Currency/CurrencyEssenceContempt3": 0
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 80,
+              "Metadata/Items/Currency/CurrencyEssenceContempt3": 64
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 0,
+              "Metadata/Items/Currency/CurrencyEssenceContempt3": 0
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 80,
+              "Metadata/Items/Currency/CurrencyEssenceContempt3": 64
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 0,
+              "Metadata/Items/Currency/CurrencyEssenceContempt3": 0
+            }
+          },
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/Currency/CurrencyModValues",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollRare",
+              "Metadata/Items/Currency/CurrencyModValues"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyModValues": 1,
+              "Metadata/Items/Currency/CurrencyRerollRare": 300
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyModValues": 4853,
+              "Metadata/Items/Currency/CurrencyRerollRare": 4740464
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyModValues": 1,
+              "Metadata/Items/Currency/CurrencyRerollRare": 333
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyModValues": 7674,
+              "Metadata/Items/Currency/CurrencyRerollRare": 5039431
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyModValues": 43543,
+              "Metadata/Items/Currency/CurrencyRerollRare": 14311264
+            }
+          },
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollRare|Metadata/Items/DivinationCards/DivinationCardTheHunger",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollRare",
+              "Metadata/Items/DivinationCards/DivinationCardTheHunger"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 1,
+              "Metadata/Items/DivinationCards/DivinationCardTheHunger": 20
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 94,
+              "Metadata/Items/DivinationCards/DivinationCardTheHunger": 1221
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 1,
+              "Metadata/Items/DivinationCards/DivinationCardTheHunger": 18
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 96,
+              "Metadata/Items/DivinationCards/DivinationCardTheHunger": 1239
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 7,
+              "Metadata/Items/DivinationCards/DivinationCardTheHunger": 138
+            }
+          },
+          {
+            "league": "Mirage",
+            "market_id": "Metadata/Items/Currency/CurrencyRerollSocketColours|Metadata/Items/Currency/CurrencyRerollRare",
+            "market_pair": [
+              "Metadata/Items/Currency/CurrencyRerollSocketColours",
+              "Metadata/Items/Currency/CurrencyRerollRare"
+            ],
+            "lowest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 1,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 1
+            },
+            "lowest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 36264,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 186384
+            },
+            "highest_ratio": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 1,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 18
+            },
+            "highest_stock": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 40204,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 239388
+            },
+            "volume_traded": {
+              "Metadata/Items/Currency/CurrencyRerollRare": 14417,
+              "Metadata/Items/Currency/CurrencyRerollSocketColours": 217178
+            }
+          }
+        ],
+        "next_change_id": 1776258000
+      }
+    }
+  ]
+}
