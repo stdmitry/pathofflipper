@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { HOUR_SECONDS, hourIso, isHourCursor } from './hours.ts';
 
-/** Bump when validation or normalization rules change; stored on every raw digest. */
+/** Bump when validation or normalization rules change; stored on each raw digest once it is parsed into pair_hours. */
 export const PARSER_VERSION = 2;
 
 export const NUMERIC_FIELDS = [
@@ -50,11 +50,8 @@ export type Interpretation =
       sourceHour: number;
       nextCursor: number;
       marketCount: number;
-      /** Markets with nonzero traded volume on either side. */
-      activeMarketCount: number;
       /** Hours between the requested cursor and the next one that the API skipped over. */
       skippedHours: number;
-      markets: MarketRecord[];
     }
   | { kind: 'caught-up'; nextCursor: number };
 
@@ -70,13 +67,7 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
-/**
- * Validates an exchange response and decides what it means for the cursor.
- *
- * `requestCursor` is the cursor that was requested, or null when requesting the earliest history.
- * Field meanings are not interpreted here: numeric maps are only checked for shape.
- */
-export function interpretResponse(status: number, body: string, requestCursor: number | null): Interpretation {
+function parseObject(status: number, body: string): Record<string, unknown> {
   let data: unknown;
   try {
     data = JSON.parse(body);
@@ -86,7 +77,17 @@ export function interpretResponse(status: number, body: string, requestCursor: n
     ]);
   }
   if (!isObject(data)) throw new MalformedResponseError(`HTTP ${status} body is not a JSON object`, []);
+  return data;
+}
 
+/**
+ * Checks what fetching needs to move the cursor safely and decides what the response means for it. Market records are
+ * not looked at beyond `markets` being an array; parseMarkets validates them later from the stored digest.
+ *
+ * `requestCursor` is the cursor that was requested, or null when requesting the earliest history.
+ */
+export function interpretEnvelope(status: number, body: string, requestCursor: number | null): Interpretation {
+  const data = parseObject(status, body);
   const next = data.next_change_id;
   const markets = data.markets;
 
@@ -124,6 +125,24 @@ export function interpretResponse(status: number, body: string, requestCursor: n
     }
   }
 
+  const sourceHour = requestCursor ?? next - HOUR_SECONDS;
+  return {
+    kind: 'hour',
+    sourceHour,
+    nextCursor: next,
+    marketCount: markets.length,
+    skippedHours: (next - sourceHour) / HOUR_SECONDS - 1,
+  };
+}
+
+/**
+ * Validates every market of a stored hour's payload and returns them in payload order.
+ * Field meanings are not interpreted here: numeric maps are only checked for shape.
+ */
+export function parseMarkets(payload: string): MarketRecord[] {
+  const markets = parseObject(200, payload).markets;
+  if (!Array.isArray(markets)) throw new MalformedResponseError('Invalid response', ['markets must be an array']);
+
   const problems: string[] = [];
   const seen = new Set<string>();
   const pairs = new Set<string>();
@@ -134,17 +153,7 @@ export function interpretResponse(status: number, body: string, requestCursor: n
     if (record) records.push(record);
   });
   if (problems.length > 0) throw new MalformedResponseError(`Invalid market records`, problems);
-
-  const sourceHour = requestCursor ?? next - HOUR_SECONDS;
-  return {
-    kind: 'hour',
-    sourceHour,
-    nextCursor: next,
-    marketCount: markets.length,
-    activeMarketCount: records.filter((record) => record.values.volume_traded.some((value) => value !== 0)).length,
-    skippedHours: (next - sourceHour) / HOUR_SECONDS - 1,
-    markets: records,
-  };
+  return records;
 }
 
 /** Records structural problems and returns the market when it is valid. */
