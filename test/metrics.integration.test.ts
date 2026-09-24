@@ -91,16 +91,16 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
     const summary = await computeMetrics(pool);
     assert.equal(summary.asOfHour, H0 + 3 * HOUR);
     assert.deepEqual(summary.windowHours, { parsed: 3, empty: 1, missing: 20 });
-    assert.deepEqual([summary.leagues, summary.markets, summary.rows], [1, CHAOS_MARKETS, CHAOS_MARKETS * 3]);
+    assert.deepEqual([summary.leagues, summary.markets, summary.rows], [1, CHAOS_MARKETS, CHAOS_MARKETS * 2]);
 
     const divine = await metricsFor(DIVINE);
     // 1h: only the exchange-down hour, so nothing is covered and turnover is unknown rather than zero.
     assert.deepEqual([divine.get(1)?.covered_hours, divine.get(1)?.quote_per_hour, divine.get(1)?.rate_num], [0, null, null]);
-    // 6h and 24h: the three Mirage hours are covered; the rest is missing or down.
+    // 24h: the three Mirage hours are covered; the rest is missing or down.
     const v = volumes(DIVINE);
     const chaos = v.reduce((sum, [c]) => sum + c, 0n);
     const div = v.reduce((sum, [, d]) => sum + d, 0n);
-    for (const window of [6, 24]) {
+    for (const window of [24]) {
       const row = divine.get(window)!;
       assert.deepEqual([row.covered_hours, row.traded_hours], [3, 3]);
       assert.deepEqual([BigInt(row.quote_volume), BigInt(row.base_volume)], [chaos, div]);
@@ -131,7 +131,7 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
       'SELECT extract(epoch FROM as_of_hour)::bigint AS as_of, calc_version FROM metric_runs',
     );
     assert.deepEqual(rows, [{ as_of: String(H0 + 3 * HOUR), calc_version: CALC_VERSION }]);
-    assert.equal((await pool.query('SELECT 1 FROM market_metrics')).rowCount, CHAOS_MARKETS * 3);
+    assert.equal((await pool.query('SELECT 1 FROM market_metrics')).rowCount, CHAOS_MARKETS * 2);
   });
 
   it('uses parsed hours only', async () => {
@@ -154,7 +154,7 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
     await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
     const divine = await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR, quote: 'divine' });
     // In the trimmed fixture only Chaos Orb trades against Divine, so it is the one Divine-quoted market.
-    assert.deepEqual([divine.leagues, divine.markets, divine.rows], [1, 1, 3]);
+    assert.deepEqual([divine.leagues, divine.markets, divine.rows], [1, 1, 2]);
     const runs = await pool.query<{ path: string }>(
       'SELECT i.metadata_path AS path FROM metric_runs r JOIN items i ON i.id = r.quote_item_id ORDER BY r.id',
     );
@@ -171,6 +171,25 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
     assert.deepEqual([BigInt(rows[0]!.quote_volume), BigInt(rows[0]!.base_volume)], [div, chaos]);
     assert.equal(BigInt(rows[0]!.rate_num!) * chaos, div * BigInt(rows[0]!.rate_den!), 'divine per chaos');
     assert.equal(rows[0]!.activity_rank, 1, 'tens of thousands of Divines an hour clear the 0.3 div/h minimum');
+  });
+
+  it('stores the gold for one flip from the items\' fees', async () => {
+    await loadMirageHours(pool);
+    await pool.query(`UPDATE items SET gold_fee = CASE metadata_path WHEN $1 THEN 15 WHEN $2 THEN 250 END`, [CHAOS_PATH, DIVINE]);
+    await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
+    const { rows } = await pool.query<{ high: string; low: string; gold: number; per_kgold: number; unpriced: string }>(
+      `SELECT m.high_rate_num::numeric / m.high_rate_den AS high, m.low_rate_num::numeric / m.low_rate_den AS low,
+         m.gold_per_flip AS gold, m.quote_per_kgold AS per_kgold,
+         (SELECT count(*) FROM market_metrics WHERE traded_hours > 0 AND gold_per_flip IS NULL) AS unpriced
+       FROM market_metrics m JOIN pairs p ON p.id = m.pair_id JOIN items i ON i.id IN (p.item_a_id, p.item_b_id)
+       WHERE i.metadata_path = $1 AND m.window_hours = 1`,
+      [DIVINE],
+    );
+    const [high, low] = [Number(rows[0]!.high), Number(rows[0]!.low)];
+    // Buying a Divine wants 1 Divine (250 gold); selling it at the high wants `high` Chaos (15 gold each).
+    assert.ok(Math.abs(rows[0]!.gold - (250 + 15 * high)) < 1e-6);
+    assert.ok(Math.abs(rows[0]!.per_kgold - ((high - low) / (250 + 15 * high)) * 1000) < 1e-6);
+    assert.ok(Number(rows[0]!.unpriced) > 0, 'items without a known fee have no gold figures');
   });
 
   it('skips private leagues', async () => {

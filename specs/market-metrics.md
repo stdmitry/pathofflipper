@@ -1,6 +1,6 @@
 # Market metrics
 
-Status: calculation version 2, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4); version 2 changed the ranking score). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
+Status: calculation version 5, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4); version 2 changed the ranking score, version 3 added gold, version 4 put gold into the score, version 5 added the held check and dropped the 6h window). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
 
 **The rank orders research candidates; it is not a profit estimate.** A high rank means a wide traded price range relative to the price, in a market where a lot of Chaos changes hands steadily and the data is complete. The range comes from executed trades at different moments, not from a spread anyone could capture, so a high rank does not mean a flip will fill or pay. Estimating profit over time is gated on [#7](https://github.com/stdmitry/pathofflipper/issues/7).
 
@@ -8,7 +8,7 @@ Status: calculation version 2, 2026-09-24 ([#4](https://github.com/stdmitry/path
 
 - PoE 1 PC, every **public** league present in the window, and markets **quoted directly in Chaos Orbs or in Divine Orbs**, screened separately (`src/market/quotes.ts`). Each quote has its own snapshot and ranking. Prices, turnover and scores are in that quote's units, so they are not compared across quotes, and nothing is converted between them. (Chaos Orb is one of the pair's two items). Other pairs stay in `pair_hours` for later. Private leagues, named `… (PL<number>)` (`leagues.private`), are skipped: 2,002 of the first 2,034 stored leagues were private, and they are not markets a player can join.
 - Rates read as **Chaos per one unit of the other item** (the base). The upstream pair order is ignored: `quoteHour` re-orients every market.
-- Windows are the last **1, 6 and 24 hours**, ending with the as-of hour. The as-of hour is the newest parsed hour by default.
+- Windows are the last **hour** and the last **24 hours**, ending with the as-of hour, which is the newest parsed hour by default. The 1h window finds opportunities. The 24h window is context only, since flipping happens within hours. A 6h window was dropped: too slow for flipping and too short for context.
 
 ## Hours
 
@@ -51,13 +51,13 @@ A market is **eligible** for a window when all of these hold:
 
 Eligible markets are ranked per league and window by their **score**, highest first:
 
-> score = (high − low) / low × turnover per hour
+> score = (high − low) / low × turnover per hour × quote per 1k gold
 
-`high` and `low` are the window's highest and lowest executed rates in Chaos per unit, so the first factor is the traded price range relative to the price, and the score is in Chaos per hour (`market_metrics.rank_score`). Ties go to the higher turnover, then to the lower pair id for a stable order. Ineligible markets are stored without a rank (`activity_rank IS NULL`) but keep their score, so they can still be looked up.
+`high` and `low` are the window's highest and lowest executed rates in quote units per unit, so the first factor is the traded price range relative to the price. The last factor is what one flip at those prices earns per 1,000 gold (see [Gold](#gold)). The range therefore counts twice, once relative to the price and once in the gold margin, which favours wide ranges; this is intended. The score is stored as `market_metrics.rank_score`. Ties go to the higher turnover, then to the lower pair id for a stable order. Eligible markets whose item has no known gold fee get no score and rank after all scored markets. Ineligible markets are stored without a rank (`activity_rank IS NULL`) but keep their score, so they can still be looked up.
 
 The eligibility thresholds matter more under this score. A single odd trade in a thin market can give a range of several hundred percent: Runegraft of the Fortress traded between 211c and 728c at 6 units per hour in Allflame. The ≥100c/h and ≥50% persistence thresholds keep such markets out of the ranking.
 
-Version 1 (until 2026-09-24) ranked by turnover per hour alone.
+Version 1 ranked by turnover per hour alone; versions 2 and 3 used (high − low) / low × turnover per hour without the gold factor.
 
 How the defaults were checked, on Mirage's 24h window ending 2026-04-15 12:00 UTC (mid-league, 1,023 Chaos markets, full coverage):
 
@@ -67,6 +67,31 @@ How the defaults were checked, on Mirage's 24h window ending 2026-04-15 12:00 UT
 - Under version 1, the top ranks were Divine Orb (328.6 c, range 300–345, volatility 0.010), The Black Barya, Valdo's Puzzle Box, Horned Scarab of Bloodlines and others. Stacked Deck (rank 7) shows why the range is not a spread: a 0.02 c low against a 4.06 c weighted rate.
 
 Chaos turnover depends on each league's economy, so re-check these distributions at league start. Changing a threshold or definition means bumping `CALC_VERSION`.
+
+## Held check (1h window)
+
+A wide low–high range in one hour can be a lasting gap between buyers and sellers, or a price that moved during the hour. The newest hour is therefore compared with the **6 previous hours**, each measured on its own low and high (`heldCheck`, stored as `held_hours`, `checked_hours`, `price_drift` and `moving`):
+
+- **Held:** the previous hours with trades whose own margin was at least **half** the newest hour's. For a single market the margin is (high − low) / low. For the Chaos → Divine view it is the hour's (Divine high × Chaos/Divine rate − Chaos low) / Chaos low. Hours without trades or without data never count as held.
+- **Moving:** across the newest and previous hours, the hourly volume-weighted price drifted (max − min) / min by more than the newest margin. The gap is then likely a price move, not a lasting spread. Moving markets get no rank.
+- **Score:** in the 1h window the score is multiplied by held / 6. A gap seen only in the newest hour scores 0.
+
+A price that jumps within the newest hour widens only that hour's range, so few previous hours hold. A price that trends over the hours shows as moving. Only using each hour's own low and high also keeps a single odd trade from defining the price for several hours.
+
+## Gold
+
+Placing an exchange order costs gold, which cannot be traded, so gold is reported next to the quote-currency figures and never converted into them.
+
+**Fees.** The game's `CurrencyExchange` table gives each exchange item a `GoldPurchaseFee` (e.g. Chaos Orb 15, Divine Orb 250, Mirror of Kalandra 25,000; median 150 over 1,126 items). [`data/gold-fees.json`](../data/gold-fees.json) vendors it from the RePoE fork's CSV export ([repoe-fork/dat-export](https://github.com/repoe-fork/dat-export)), with the game version it came from (3.29.3.3). `npm run gold-fees` copies it into `items.gold_fee`; `-- --download` refreshes the file first. Refresh once per league or patch, review the diff and commit it, then run `npm run metrics`.
+
+**Rule.** An order's gold depends only on the item it *wants*: changing the offered item leaves the cost unchanged (checked in game, 2026-09-24). The cost is taken to be the wanted item's fee × the quantity wanted, which fits guides saying it scales in proportion to the amount but has not been checked in game.
+
+**Per market** (`market_metrics.gold_per_flip`, `quote_per_kgold`), for one base unit at the window's prices:
+
+> gold per flip = fee(base) × 1 + fee(quote) × high  
+> quote per 1k gold = (high − low) / gold per flip × 1,000
+
+Buying one unit wants 1 base unit, and selling it at the high wants `high` quote units. For expensive items the quote side dominates: flipping one Divine at 300c → 380c costs 250 + 15 × 380 = 5,950 gold for at most 80 Chaos, about 13.4 Chaos per 1,000 gold. Both figures use the range extremes, so the margin is an upper bound that one odd trade can inflate. On Allflame's 24h window the top Chaos markets by this measure were tattoos and fossils with lows of 1–3 Chaos against highs of 20–145. Items without a fee have NULL gold figures.
 
 ## Storage and runs
 

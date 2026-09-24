@@ -15,6 +15,7 @@ import {
   H0,
   HOUR,
   loadMirageHours,
+  marketJson,
   resetSchema,
   skipWithoutDatabase as skip,
   TEST_DATABASE_URL,
@@ -87,6 +88,11 @@ describe('read API (PostgreSQL)', { skip }, () => {
   describe('with the Mirage hours and metrics as of H0+2h', () => {
     beforeEach(async () => {
       await loadMirageHours(pool);
+      // Gold fees of Chaos, Divine and Chromatic, as in the game data; the other items have none.
+      await pool.query(
+        `UPDATE items SET gold_fee = CASE metadata_path WHEN $1 THEN 15 WHEN $2 THEN 250 WHEN $3 THEN 20 END`,
+        ['Metadata/Items/Currency/CurrencyRerollRare', DIVINE, 'Metadata/Items/Currency/CurrencyRerollSocketColours'],
+      );
       await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
     });
 
@@ -113,29 +119,37 @@ describe('read API (PostgreSQL)', { skip }, () => {
       assert.equal(typeof divine.volume.quote, 'string', 'integer totals are exact strings');
       assert.equal(body.meta.total, 2);
       assert.match(body.meta.ranking, /not a validated profit estimate/);
-      // Rank 1 has the higher score: (high − low) / low × Chaos per hour.
+      // Score: (high − low) / low × Chaos per hour × Chaos per 1k gold × the share of the 6 previous hours that held.
       assert.ok(body.data[0].score > body.data[1].score);
-      const d = body.data[0];
-      assert.ok(Math.abs(d.score - ((d.high_rate.value - d.low_rate.value) / d.low_rate.value) * d.turnover_per_hour) < 1e-6);
+      for (const d of body.data) {
+        const expected =
+          ((d.high_rate.value - d.low_rate.value) / d.low_rate.value) *
+          d.turnover_per_hour *
+          d.quote_per_1k_gold *
+          (d.held.hours / d.held.lookback);
+        assert.ok(Math.abs(d.score - expected) <= 1e-9 * Math.max(1, expected), `${d.item.path} score`);
+      }
+      // Divine's 1h range held in both earlier fixture hours; Chromatic's 1,700% range in its newest hour did not.
+      assert.deepEqual(body.data.map((d: Json) => [d.held.checked, d.held.hours]), [[2, 2], [2, 0]]);
       assert.ok(body.meta.units.rate);
       // H0+2h ended at H0+3h; the clock is 2.5 hours later, within the 3-hour limit.
       assert.deepEqual([body.meta.source_age_hours, body.meta.stale], [2.5, false]);
     });
 
     it('lists every market with scope=all, sorts, searches and pages', async () => {
-      const all = await get('/api/markets?league=Mirage&scope=all&sort=turnover');
+      const all = await get('/api/markets?league=Mirage&window=24h&scope=all&sort=turnover');
       assert.equal(all.body.meta.total, 5);
       assert.equal(all.body.data[0].item.path, DIVINE);
       assert.ok(all.body.data.every((m: Json) => m.rank === null), 'no 24h market has enough coverage');
       assert.equal(all.body.data.at(-1).turnover_per_hour, 0, 'listed-only markets trade nothing');
 
-      const page = await get('/api/markets?league=Mirage&scope=all&sort=turnover&limit=2&offset=1');
+      const page = await get('/api/markets?league=Mirage&window=24h&scope=all&sort=turnover&limit=2&offset=1');
       assert.deepEqual(page.body.data.map((m: Json) => m.item.path), all.body.data.slice(1, 3).map((m: Json) => m.item.path));
       assert.equal(page.body.meta.total, 5);
 
       // Low and high sort by the traded price extremes; markets without trades go last either way.
       for (const key of ['low', 'high']) {
-        const sorted = await get(`/api/markets?league=Mirage&scope=all&sort=${key}`);
+        const sorted = await get(`/api/markets?league=Mirage&window=24h&scope=all&sort=${key}`);
         const values = sorted.body.data.map((m: Json) => m[`${key}_rate`]?.value ?? null);
         const priced = values.filter((v: number | null) => v !== null);
         assert.deepEqual(priced, [...priced].sort((a: number, b: number) => b - a), `sort=${key} is descending`);
@@ -143,15 +157,15 @@ describe('read API (PostgreSQL)', { skip }, () => {
       }
 
       // Range sorts by high minus low in Chaos.
-      const ranged = await get('/api/markets?league=Mirage&scope=all&sort=range');
+      const ranged = await get('/api/markets?league=Mirage&window=24h&scope=all&sort=range');
       const widths = ranged.body.data
         .filter((m: Json) => m.high_rate)
         .map((m: Json) => m.high_rate.value - m.low_rate.value);
       assert.deepEqual(widths, [...widths].sort((a: number, b: number) => b - a));
 
-      const mirror = await get('/api/markets?league=Mirage&scope=all&q=duplicate');
+      const mirror = await get('/api/markets?league=Mirage&window=24h&scope=all&q=duplicate');
       assert.deepEqual(mirror.body.data.map((m: Json) => m.item.path), [MIRROR]);
-      const wildcard = await get(`/api/markets?league=Mirage&scope=all&q=${encodeURIComponent('%')}`);
+      const wildcard = await get(`/api/markets?league=Mirage&window=24h&scope=all&q=${encodeURIComponent('%')}`);
       assert.equal(wildcard.body.meta.total, 0, '% is matched literally');
     });
 
@@ -168,6 +182,64 @@ describe('read API (PostgreSQL)', { skip }, () => {
       assert.equal(history.body.data.summary.traded_hours, 3);
       // Divine has no Divine market, so its id does not resolve when quoted in Divine.
       assert.equal((await get(`/api/markets/${encodeMarketId(DIVINE)}/history?league=Mirage&quote=divine`)).status, 404);
+    });
+
+    it('returns gold figures in the list and the history summary', async () => {
+      await pool.query(`UPDATE items SET gold_fee = CASE metadata_path WHEN $1 THEN 15 WHEN $2 THEN 250 END`, [
+        'Metadata/Items/Currency/CurrencyRerollRare',
+        DIVINE,
+      ]);
+      await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
+      const list = await get('/api/markets?league=Mirage&window=1h');
+      const divine = list.body.data.find((m: Json) => m.item.path === DIVINE);
+      assert.ok(Math.abs(divine.gold_per_flip - (250 + 15 * divine.high_rate.value)) < 1e-6);
+      assert.ok(divine.quote_per_1k_gold > 0);
+      assert.ok(list.body.meta.units.gold_per_flip);
+
+      const history = await get(`/api/markets/${encodeMarketId(DIVINE)}/history?league=Mirage`);
+      const summary = history.body.data.summary;
+      assert.deepEqual(summary.gold_fees, { base: 250, quote: 15 });
+      assert.ok(Math.abs(summary.gold_per_flip - (250 + 15 * summary.high_rate.value)) < 1e-6);
+    });
+
+    it('lists Chaos → Divine flips for items traded in both markets', async () => {
+      // One more hour: Chaos/Divine at 300c, and item X for 30c in its Chaos market and 0.2 div in its Divine market.
+      const X = 'Metadata/Items/Scarabs/TestScarab';
+      const CHAOS = 'Metadata/Items/Currency/CurrencyRerollRare';
+      // Two hours with the same prices, so the newest has one previous hour that held.
+      const hours = [H0 + 4 * HOUR, H0 + 5 * HOUR];
+      const markets = [
+        marketJson('Mirage', CHAOS, DIVINE, ['3000', '10']),
+        marketJson('Mirage', CHAOS, X, ['300', '10']),
+        marketJson('Mirage', DIVINE, X, ['2', '10']),
+      ];
+      const exchange = new FakeExchange(6);
+      for (const hour of hours) {
+        exchange.overrides.set(hour, { url: 'fake', status: 200, body: `{"next_change_id":${hour + HOUR},"markets":[${markets.join(',')}]}` });
+      }
+      await ingest(pool, exchange, { maxHours: 2, start: { kind: 'hour', cursor: H0 } });
+      await parsePending(pool, { itemNames: new Map() });
+      await pool.query('UPDATE items SET gold_fee = 50 WHERE metadata_path = $1', [X]);
+      await computeMetrics(pool, { quote: 'chaos' });
+      await computeMetrics(pool, { quote: 'divine' });
+
+      const { status, body } = await get('/api/flips?league=Mirage&window=1h');
+      assert.equal(status, 200);
+      assert.equal(body.meta.divine_rate, 300);
+      assert.equal(body.meta.total, 1);
+      const flip = body.data[0];
+      assert.equal(flip.item.path, X);
+      assert.deepEqual(
+        [flip.rank, flip.buy.value, flip.sell.value, flip.sell_chaos, flip.margin_chaos, flip.turnover_per_hour, flip.gold_per_flip],
+        [1, 30, 0.2, 60, 30, 300, 100],
+      );
+      assert.deepEqual(flip.held, { hours: 1, checked: 1, lookback: 6, drift: 0, moving: false });
+      assert.equal(flip.score, (1 * 300 * 300 * 1) / 6);
+      assert.match(body.meta.ranking, /not a validated profit estimate/);
+
+      // Unknown leagues and bad parameters are refused like the market list.
+      assert.equal((await get('/api/flips?league=Nope')).status, 404);
+      assert.equal((await get('/api/flips?league=Mirage&sort=low')).body.error.parameter, 'sort');
     });
 
     it('returns one point per hour with explicit gaps', async () => {

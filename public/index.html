@@ -22,7 +22,8 @@
       <strong>Historical screening, not live quotes.</strong>
       Low and high are the cheapest and dearest prices paid in past trades, not prices you can buy or sell at now,
       and the gap between them is not a spread you can capture. The rank orders markets by that gap relative to the
-      low price, times the amount traded per hour. It points to markets worth a closer look, not to proven profit.
+      low price, times the amount traded per hour, times what a flip earns per 1,000 gold. It points to markets worth a
+      closer look, not to proven profit.
     </p>
     <ul id="problems" class="problems" hidden></ul>
 
@@ -35,14 +36,14 @@
             <select id="league" name="league" disabled></select>
           </label>
           <fieldset class="segmented">
-            <legend>Priced in</legend>
+            <legend>View</legend>
             <label><input type="radio" name="quote" value="chaos" /> Chaos</label>
             <label><input type="radio" name="quote" value="divine" /> Divine</label>
+            <label title="Buy for Chaos, then sell in bulk for Divines"><input type="radio" name="quote" value="flip" /> Chaos → Divine</label>
           </fieldset>
           <fieldset class="segmented">
             <legend>Window</legend>
             <label><input type="radio" name="window" value="1h" /> 1h</label>
-            <label><input type="radio" name="window" value="6h" /> 6h</label>
             <label><input type="radio" name="window" value="24h" /> 24h</label>
           </fieldset>
           <label class="search">
@@ -58,19 +59,7 @@
         <div class="table-wrap">
           <table id="table">
             <thead>
-              <tr>
-                <th data-sort="rank" class="num" title="Position by score among eligible markets">Rank</th>
-                <th data-sort="name">Item</th>
-                <th data-sort="low" class="num" title="Lowest price paid in a trade during the window">Low</th>
-                <th data-sort="high" class="num" title="Highest price paid in a trade during the window">High</th>
-                <th data-sort="range" class="num" title="Highest minus lowest price paid in the window; not a spread you can capture">High − Low</th>
-                <th data-sort="score" class="num" title="(High − Low) / Low × amount traded per hour">Score</th>
-                <th data-sort="turnover" id="turnover-head" class="num" title="Amount of the quote currency traded per covered hour">Chaos/h</th>
-                <th data-sort="units" class="num" title="Units of the item traded per covered hour">Units/h</th>
-                <th data-sort="persistence" class="num" title="Hours with trades / hours with data">Traded</th>
-                <th class="num" title="Hours with data / hours in the window">Coverage</th>
-                <th data-sort="volatility" class="num" title="Spread of hourly rates, weighted by volume">Volatility</th>
-              </tr>
+              <tr id="head"></tr>
             </thead>
             <tbody id="rows"></tbody>
           </table>
