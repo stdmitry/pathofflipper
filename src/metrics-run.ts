@@ -201,7 +201,7 @@ interface QuoteMarket {
   rows: Map<number, PairHourRow>;
 }
 
-/** Every quote-currency market with at least one row in the window, with its rows by hour. */
+/** Every quote-currency market of a public league with at least one row in the window, with its rows by hour. */
 async function loadQuoteMarkets(pool: pg.Pool, quoteId: number, first: number, last: number) {
   const columns = NUMERIC_FIELDS.flatMap((field) => [`h.${field}_a`, `h.${field}_b`]).join(', ');
   const { rows } = await pool.query<PairHourRow>(
@@ -211,7 +211,7 @@ async function loadQuoteMarkets(pool: pg.Pool, quoteId: number, first: number, l
      )
      SELECT h.league_id, h.pair_id, p.item_a_id, p.item_b_id, extract(epoch FROM h.source_hour)::bigint AS hour, ${columns}
      FROM w h JOIN pairs p ON p.id = h.pair_id
-     WHERE $2 IN (p.item_a_id, p.item_b_id) AND h.league_id IN (SELECT id FROM leagues WHERE realm = $1)`,
+     WHERE $2 IN (p.item_a_id, p.item_b_id) AND h.league_id IN (SELECT id FROM leagues WHERE realm = $1 AND NOT private)`,
     [REALM, quoteId, first, last],
   );
   const markets = new Map<string, QuoteMarket>();

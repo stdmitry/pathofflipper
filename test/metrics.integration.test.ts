@@ -3,6 +3,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import pg from 'pg';
 import { runMigrations } from '../src/db/migrate.ts';
 import { ConcurrentRunError, ingest, withMetricsLock } from '../src/ingest.ts';
+import { parsePending } from '../src/parse-hours.ts';
 import { CALC_VERSION } from '../src/market/metrics.ts';
 import { CHAOS_PATH, computeMetrics } from '../src/metrics-run.ts';
 import {
@@ -10,6 +11,7 @@ import {
   H0,
   HOUR,
   loadMirageHours,
+  marketJson,
   mirageFixture,
   resetSchema,
   skipWithoutDatabase as skip,
@@ -145,6 +147,35 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
     await withMetricsLock(pool, async () => {
       await assert.rejects(computeMetrics(pool), ConcurrentRunError);
     });
+  });
+
+  it('skips private leagues', async () => {
+    await loadMirageHours(pool);
+    // One more hour with the same Chaos/Divine market in Mirage and in a private league.
+    const hour = H0 + 4 * HOUR;
+    const markets = ['Mirage', 'Limey Whelps (PL86569)'].map((league) => marketJson(league, CHAOS_PATH, DIVINE, ['300', '1']));
+    const exchange = new FakeExchange(5);
+    exchange.overrides.set(hour, { url: 'fake', status: 200, body: `{"next_change_id":${hour + HOUR},"markets":[${markets.join(',')}]}` });
+    await ingest(pool, exchange, { maxHours: 1, start: { kind: 'hour', cursor: H0 } });
+    await parsePending(pool, { itemNames: new Map() });
+
+    const summary = await computeMetrics(pool);
+    assert.equal(summary.asOfHour, hour);
+    assert.equal(summary.leagues, 1);
+    const { rows } = await pool.query<{ name: string }>(
+      'SELECT DISTINCT l.name FROM market_metrics m JOIN leagues l ON l.id = m.league_id',
+    );
+    assert.deepEqual(rows, [{ name: 'Mirage' }]);
+  });
+
+  it('marks private leagues by their (PL<number>) suffix', async () => {
+    const names = ['Allflame', 'Phrecia 2.0', 'HC Ruthless Allflame', 'Limey Whelps (PL86569)', 'Odd (PL)', 'X (PL1) y'];
+    await pool.query(`INSERT INTO leagues (realm, name) SELECT 'pc', unnest($1::text[])`, [names]);
+    const { rows } = await pool.query<{ name: string; private: boolean }>('SELECT name, private FROM leagues ORDER BY id');
+    assert.deepEqual(
+      rows.map((r) => [r.name, r.private]),
+      names.map((name) => [name, name === 'Limey Whelps (PL86569)']),
+    );
   });
 
   it('categorizes items by their Metadata path', async () => {

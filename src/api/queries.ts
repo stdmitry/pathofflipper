@@ -101,8 +101,12 @@ function storedRational(num: string | null, den: string | null): Rational | null
 }
 
 async function leagueId(pool: pg.Pool, name: string): Promise<number> {
-  const { rows } = await pool.query<{ id: number }>('SELECT id FROM leagues WHERE realm = $1 AND name = $2', [REALM, name]);
-  if (!rows[0]) throw new NotFoundError(`Unknown league "${name}"`);
+  // Private leagues are stored but not served.
+  const { rows } = await pool.query<{ id: number }>('SELECT id FROM leagues WHERE realm = $1 AND name = $2 AND NOT private', [
+    REALM,
+    name,
+  ]);
+  if (!rows[0]) throw new NotFoundError(`Unknown or private league "${name}"`);
   return rows[0].id;
 }
 

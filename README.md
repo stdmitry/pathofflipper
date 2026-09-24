@@ -91,7 +91,7 @@ ORDER BY m.activity_rank LIMIT 20;
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/leagues` | Leagues in the current metrics snapshot: `active` (present in the newest hour), market and eligible-market counts for 24h. |
+| `GET /api/leagues` | Public leagues in the current metrics snapshot: `active` (present in the newest hour), market and eligible-market counts for 24h. Private leagues (`… (PL<number>)`) are stored but never served; asking for one answers 404. |
 | `GET /api/markets?league=<name>` | Chaos markets of a league with their metrics. `window=1h\|6h\|24h` (24h), `scope=eligible\|all` (eligible), `sort=rank\|turnover\|units\|persistence\|volatility\|rate\|name` (rank), `order=asc\|desc`, `q=<text>` (name or path), `limit` 1–100 (50), `offset` 0–10,000. `meta.total` counts all matches. |
 | `GET /api/markets/<id>/history?league=<name>` | One point per hour, ending at the newest parsed hour, plus a summary over the window. `window=24h\|7d\|30d` (24h). Every hour has a `status`: `missing`, `exchange-down`, `league-absent` (all three unknown), `inactive`, `listed` or `traded`. Gaps are never left out or zero-filled. |
 | `GET /api/status` | `state` (`ok` or `degraded`) with the `problems` behind it: `no_data`, `stale_source`, `last_fetch_failed`, `parse_failures`, `rejected_responses`, `metrics_behind`, `gaps_last_24h`. Also cursor, newest fetched and parsed hours, pending and failed parses, and the metrics snapshot. |

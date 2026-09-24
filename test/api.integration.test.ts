@@ -166,6 +166,16 @@ describe('read API (PostgreSQL)', { skip }, () => {
       assert.deepEqual(body.data.hours.slice(-4).map((h: Json) => h.status), ['inactive', 'listed', 'inactive', 'exchange-down']);
     });
 
+    it('does not serve private leagues', async () => {
+      await pool.query(`INSERT INTO leagues (realm, name) VALUES ('pc', 'Limey Whelps (PL86569)')`);
+      const league = encodeURIComponent('Limey Whelps (PL86569)');
+      for (const path of [`/api/markets?league=${league}`, `/api/markets/${encodeMarketId(DIVINE)}/history?league=${league}`]) {
+        const { status, body } = await get(path);
+        assert.equal(status, 404, path);
+        assert.match(body.error.message, /private/);
+      }
+    });
+
     it('answers 404 for unknown or non-Chaos markets', async () => {
       for (const id of ['xyz', encodeMarketId('Metadata/Items/Currency/NotStored'), encodeMarketId(NON_CHAOS)]) {
         const response = await get(`/api/markets/${id}/history?league=Mirage`);

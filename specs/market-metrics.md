@@ -6,7 +6,7 @@ Status: calculation version 1, 2026-09-24 ([#4](https://github.com/stdmitry/path
 
 ## Scope
 
-- PoE 1 PC, every league present in the window, and markets **quoted directly in Chaos Orbs** (Chaos Orb is one of the pair's two items). Other pairs stay in `pair_hours` for later.
+- PoE 1 PC, every **public** league present in the window, and markets **quoted directly in Chaos Orbs** (Chaos Orb is one of the pair's two items). Other pairs stay in `pair_hours` for later. Private leagues, named `… (PL<number>)` (`leagues.private`), are skipped: 2,002 of the first 2,034 stored leagues were private, and they are not markets a player can join.
 - Rates read as **Chaos per one unit of the other item** (the base). The upstream pair order is ignored: `quoteHour` re-orients every market.
 - Windows are the last **1, 6 and 24 hours**, ending with the as-of hour. The as-of hour is the newest parsed hour by default.
 
