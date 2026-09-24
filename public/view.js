@@ -68,6 +68,18 @@ export function rateText(rate) {
   return `${(1 / rate.value).toFixed(1)} per c`;
 }
 
+/**
+ * High minus low, in the unit the prices are shown in: Chaos when the high is at least 1 Chaos ("23.0c"), otherwise
+ * items per Chaos ("1.0 per c" between 10.0 and 9.0 per c), where a Chaos difference would round to 0.0.
+ * @param {Rate | null} low
+ * @param {Rate | null} high
+ */
+export function differenceText(low, high) {
+  if (!low || !high || !(low.value > 0) || !(high.value > 0)) return DASH;
+  if (high.value >= 1) return `${(high.value - low.value).toFixed(1)}c`;
+  return `${(1 / low.value - 1 / high.value).toFixed(1)} per c`;
+}
+
 /** @param {number | null | undefined} share 0..1 */
 export function percentText(share) {
   if (share === null || share === undefined || !Number.isFinite(share)) return DASH;
@@ -104,6 +116,7 @@ export function marketRow(m) {
     // The lowest and highest price actually paid in the window, in Chaos per item.
     low: rateText(m.low_rate),
     high: rateText(m.high_rate),
+    range: differenceText(m.low_rate, m.high_rate),
     turnover: m.turnover_per_hour === null ? DASH : `${compact(m.turnover_per_hour)}c/h`,
     units: m.units_per_hour === null ? DASH : `${compact(m.units_per_hour)}/h`,
     traded: `${m.traded_hours}/${m.covered_hours} h`,
@@ -161,7 +174,7 @@ export function statusCounts(statuses) {
 /**
  * @typedef {{
  *   league: string, window: '1h' | '6h' | '24h', scope: 'eligible' | 'all',
- *   sort: 'rank' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'low' | 'high' | 'name',
+ *   sort: 'rank' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'low' | 'high' | 'range' | 'name',
  *   order: '' | 'asc' | 'desc',
  *   q: string, offset: number, market: string, history: '24h' | '7d' | '30d'
  * }} State
@@ -183,7 +196,7 @@ export const DEFAULT_STATE = Object.freeze({
 const CHOICES = /** @type {Record<string, readonly string[]>} */ ({
   window: ['1h', '6h', '24h'],
   scope: ['eligible', 'all'],
-  sort: ['rank', 'turnover', 'units', 'persistence', 'volatility', 'low', 'high', 'name'],
+  sort: ['rank', 'turnover', 'units', 'persistence', 'volatility', 'low', 'high', 'range', 'name'],
   order: ['', 'asc', 'desc'],
   history: ['24h', '7d', '30d'],
 });

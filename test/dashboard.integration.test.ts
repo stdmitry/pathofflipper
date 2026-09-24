@@ -71,6 +71,7 @@ describe('dashboard against the Mirage fixture (PostgreSQL)', { skip }, () => {
     assert.equal(row.low, rateText(low));
     assert.equal(row.high, rateText(high));
     assert.deepEqual([row.low, row.high], [`${(low.value).toFixed(1)}c`, `${(high.value).toFixed(1)}c`]);
+    assert.equal(row.range, `${(high.value - low.value).toFixed(1)}c`);
     assert.equal(row.turnover, `${compact(chaos)}c/h`);
     assert.equal(row.units, `${compact(divine)}/h`);
     assert.deepEqual([row.rank, row.traded, row.coverage], ['1', '1/1 h', '100%']);
@@ -88,6 +89,7 @@ describe('dashboard against the Mirage fixture (PostgreSQL)', { skip }, () => {
     assert.deepEqual([m.highest_ratio![CHROMATIC], m.highest_ratio![CHAOS_PATH], m.lowest_ratio![CHROMATIC], m.lowest_ratio![CHAOS_PATH]], [18, 1, 1, 1]);
     assert.equal(row.low, '18.0 per c');
     assert.equal(row.high, '1.0c');
+    assert.equal(row.range, `${(1 - 1 / 18).toFixed(1)}c`);
     assert.equal(row.turnover, `${compact(chaos)}c/h`);
     assert.equal(row.units, `${compact(chromatic)}/h`);
   });

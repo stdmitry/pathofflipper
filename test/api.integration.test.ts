@@ -137,6 +137,13 @@ describe('read API (PostgreSQL)', { skip }, () => {
         assert.deepEqual(values.slice(priced.length), values.slice(priced.length).map(() => null));
       }
 
+      // Range sorts by high minus low in Chaos.
+      const ranged = await get('/api/markets?league=Mirage&scope=all&sort=range');
+      const widths = ranged.body.data
+        .filter((m: Json) => m.high_rate)
+        .map((m: Json) => m.high_rate.value - m.low_rate.value);
+      assert.deepEqual(widths, [...widths].sort((a: number, b: number) => b - a));
+
       const mirror = await get('/api/markets?league=Mirage&scope=all&q=duplicate');
       assert.deepEqual(mirror.body.data.map((m: Json) => m.item.path), [MIRROR]);
       const wildcard = await get(`/api/markets?league=Mirage&scope=all&q=${encodeURIComponent('%')}`);

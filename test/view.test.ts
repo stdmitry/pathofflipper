@@ -6,6 +6,7 @@ import {
   DASH,
   DEFAULT_STATE,
   historySeries,
+  differenceText,
   hourText,
   marketQuery,
   marketRow,
@@ -36,6 +37,16 @@ describe('number formatting', () => {
     assert.equal(rateText({ num: '1', den: '14', value: 1 / 14 }), '14.0 per c');
     assert.equal(rateText({ num: '200', den: '1937', value: 200 / 1937 }), '9.7 per c');
     assert.equal(rateText(null), DASH);
+  });
+
+  it('shows high minus low in the unit the prices are shown in', () => {
+    assert.equal(differenceText(rate(354), rate(377)), '23.0c');
+    assert.equal(differenceText(rate(6.328), rate(7)), '0.7c');
+    // 10 per c to 9 per c: a Chaos difference of 0.011 would read 0.0c, so it stays in items per Chaos.
+    assert.equal(differenceText({ num: '1', den: '10', value: 0.1 }, { num: '1', den: '9', value: 1 / 9 }), '1.0 per c');
+    // Low below 1 Chaos, high at 1 Chaos: shown in Chaos like the high.
+    assert.equal(differenceText({ num: '1', den: '18', value: 1 / 18 }, rate(1)), '0.9c');
+    assert.deepEqual([differenceText(null, rate(1)), differenceText(rate(1), null)], [DASH, DASH]);
   });
 
   it('formats shares, volatility, ages and hours', () => {
@@ -75,6 +86,7 @@ describe('marketRow', () => {
       unnamed: false,
       low: '300.0c',
       high: '345.0c',
+      range: '45.0c',
       turnover: '13.4Mc/h',
       units: '40.9k/h',
       traded: '12/18 h',
@@ -88,7 +100,7 @@ describe('marketRow', () => {
   it('shows unknown values as a dash rather than zero', () => {
     const row = marketRow({ ...market, rank: null, eligible: false, covered_hours: 0, traded_hours: 0, coverage: 0,
       turnover_per_hour: null, units_per_hour: null, rate: null, low_rate: null, high_rate: null, volatility: null });
-    assert.deepEqual([row.rank, row.low, row.high, row.turnover, row.units, row.volatility], [DASH, DASH, DASH, DASH, DASH, DASH]);
+    assert.deepEqual([row.rank, row.low, row.high, row.range, row.turnover, row.units, row.volatility], [DASH, DASH, DASH, DASH, DASH, DASH, DASH]);
     assert.equal(row.lowCoverage, true);
   });
 });

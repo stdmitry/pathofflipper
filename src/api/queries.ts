@@ -148,6 +148,7 @@ const SORT_SQL: Record<MarketSort, string> = {
   rate: 'm.rate_num::numeric / m.rate_den',
   low: 'm.low_rate_num::numeric / m.low_rate_den',
   high: 'm.high_rate_num::numeric / m.high_rate_den',
+  range: 'm.high_rate_num::numeric / m.high_rate_den - m.low_rate_num::numeric / m.low_rate_den',
   name: 'lower(coalesce(base.display_name, base.metadata_path))',
 };
 

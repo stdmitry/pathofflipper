@@ -4,7 +4,7 @@ import { drawHistory } from './chart.js';
 import * as view from './view.js';
 
 const PAGE_SIZE = 50;
-const COLUMNS = 9;
+const COLUMNS = 10;
 
 /** @param {string} id */
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -154,6 +154,7 @@ function renderRows(rows) {
         el('td', {}, open, el('span', { class: 'category' }, r.category)),
         el('td', { class: 'num strong' }, r.low),
         el('td', { class: 'num strong' }, r.high),
+        el('td', { class: 'num' }, r.range),
         el('td', { class: 'num' }, r.turnover),
         el('td', { class: 'num' }, r.units),
         el('td', { class: 'num' }, r.traded),
@@ -235,6 +236,7 @@ function renderDetail(history) {
   const stats = [
     ['Low', row.low, 'Lowest price paid in a trade during this window'],
     ['High', row.high, 'Highest price paid in a trade during this window'],
+    ['High − Low', row.range, 'Highest minus lowest price paid; not a spread you can capture'],
     ['Chaos/h', row.turnover, 'Chaos traded per hour with data'],
     ['Units/h', row.units, `${item.name} traded per hour with data`],
     ['Traded', row.traded, 'Hours with trades / hours with data'],
