@@ -91,16 +91,16 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
     const summary = await computeMetrics(pool);
     assert.equal(summary.asOfHour, H0 + 3 * HOUR);
     assert.deepEqual(summary.windowHours, { parsed: 3, empty: 1, missing: 20 });
-    assert.deepEqual([summary.leagues, summary.markets, summary.rows], [1, CHAOS_MARKETS, CHAOS_MARKETS * 3]);
+    assert.deepEqual([summary.leagues, summary.markets, summary.rows], [1, CHAOS_MARKETS, CHAOS_MARKETS * 2]);
 
     const divine = await metricsFor(DIVINE);
     // 1h: only the exchange-down hour, so nothing is covered and turnover is unknown rather than zero.
     assert.deepEqual([divine.get(1)?.covered_hours, divine.get(1)?.quote_per_hour, divine.get(1)?.rate_num], [0, null, null]);
-    // 6h and 24h: the three Mirage hours are covered; the rest is missing or down.
+    // 24h: the three Mirage hours are covered; the rest is missing or down.
     const v = volumes(DIVINE);
     const chaos = v.reduce((sum, [c]) => sum + c, 0n);
     const div = v.reduce((sum, [, d]) => sum + d, 0n);
-    for (const window of [6, 24]) {
+    for (const window of [24]) {
       const row = divine.get(window)!;
       assert.deepEqual([row.covered_hours, row.traded_hours], [3, 3]);
       assert.deepEqual([BigInt(row.quote_volume), BigInt(row.base_volume)], [chaos, div]);
@@ -131,7 +131,7 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
       'SELECT extract(epoch FROM as_of_hour)::bigint AS as_of, calc_version FROM metric_runs',
     );
     assert.deepEqual(rows, [{ as_of: String(H0 + 3 * HOUR), calc_version: CALC_VERSION }]);
-    assert.equal((await pool.query('SELECT 1 FROM market_metrics')).rowCount, CHAOS_MARKETS * 3);
+    assert.equal((await pool.query('SELECT 1 FROM market_metrics')).rowCount, CHAOS_MARKETS * 2);
   });
 
   it('uses parsed hours only', async () => {
@@ -154,7 +154,7 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
     await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
     const divine = await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR, quote: 'divine' });
     // In the trimmed fixture only Chaos Orb trades against Divine, so it is the one Divine-quoted market.
-    assert.deepEqual([divine.leagues, divine.markets, divine.rows], [1, 1, 3]);
+    assert.deepEqual([divine.leagues, divine.markets, divine.rows], [1, 1, 2]);
     const runs = await pool.query<{ path: string }>(
       'SELECT i.metadata_path AS path FROM metric_runs r JOIN items i ON i.id = r.quote_item_id ORDER BY r.id',
     );

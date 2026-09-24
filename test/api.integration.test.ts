@@ -119,13 +119,18 @@ describe('read API (PostgreSQL)', { skip }, () => {
       assert.equal(typeof divine.volume.quote, 'string', 'integer totals are exact strings');
       assert.equal(body.meta.total, 2);
       assert.match(body.meta.ranking, /not a validated profit estimate/);
-      // Rank 1 has the higher score: (high − low) / low × Chaos per hour × Chaos per 1k gold.
+      // Score: (high − low) / low × Chaos per hour × Chaos per 1k gold × the share of the 6 previous hours that held.
       assert.ok(body.data[0].score > body.data[1].score);
       for (const d of body.data) {
         const expected =
-          ((d.high_rate.value - d.low_rate.value) / d.low_rate.value) * d.turnover_per_hour * d.quote_per_1k_gold;
-        assert.ok(Math.abs(d.score - expected) / expected < 1e-9, `${d.item.path} score`);
+          ((d.high_rate.value - d.low_rate.value) / d.low_rate.value) *
+          d.turnover_per_hour *
+          d.quote_per_1k_gold *
+          (d.held.hours / d.held.lookback);
+        assert.ok(Math.abs(d.score - expected) <= 1e-9 * Math.max(1, expected), `${d.item.path} score`);
       }
+      // Divine's 1h range held in both earlier fixture hours; Chromatic's 1,700% range in its newest hour did not.
+      assert.deepEqual(body.data.map((d: Json) => [d.held.checked, d.held.hours]), [[2, 2], [2, 0]]);
       assert.ok(body.meta.units.rate);
       // H0+2h ended at H0+3h; the clock is 2.5 hours later, within the 3-hour limit.
       assert.deepEqual([body.meta.source_age_hours, body.meta.stale], [2.5, false]);
@@ -201,15 +206,18 @@ describe('read API (PostgreSQL)', { skip }, () => {
       // One more hour: Chaos/Divine at 300c, and item X for 30c in its Chaos market and 0.2 div in its Divine market.
       const X = 'Metadata/Items/Scarabs/TestScarab';
       const CHAOS = 'Metadata/Items/Currency/CurrencyRerollRare';
-      const hour = H0 + 4 * HOUR;
+      // Two hours with the same prices, so the newest has one previous hour that held.
+      const hours = [H0 + 4 * HOUR, H0 + 5 * HOUR];
       const markets = [
         marketJson('Mirage', CHAOS, DIVINE, ['3000', '10']),
         marketJson('Mirage', CHAOS, X, ['300', '10']),
         marketJson('Mirage', DIVINE, X, ['2', '10']),
       ];
-      const exchange = new FakeExchange(5);
-      exchange.overrides.set(hour, { url: 'fake', status: 200, body: `{"next_change_id":${hour + HOUR},"markets":[${markets.join(',')}]}` });
-      await ingest(pool, exchange, { maxHours: 1, start: { kind: 'hour', cursor: H0 } });
+      const exchange = new FakeExchange(6);
+      for (const hour of hours) {
+        exchange.overrides.set(hour, { url: 'fake', status: 200, body: `{"next_change_id":${hour + HOUR},"markets":[${markets.join(',')}]}` });
+      }
+      await ingest(pool, exchange, { maxHours: 2, start: { kind: 'hour', cursor: H0 } });
       await parsePending(pool, { itemNames: new Map() });
       await pool.query('UPDATE items SET gold_fee = 50 WHERE metadata_path = $1', [X]);
       await computeMetrics(pool, { quote: 'chaos' });
@@ -225,7 +233,8 @@ describe('read API (PostgreSQL)', { skip }, () => {
         [flip.rank, flip.buy.value, flip.sell.value, flip.sell_chaos, flip.margin_chaos, flip.turnover_per_hour, flip.gold_per_flip],
         [1, 30, 0.2, 60, 30, 300, 100],
       );
-      assert.equal(flip.score, 1 * 300 * 300);
+      assert.deepEqual(flip.held, { hours: 1, checked: 1, lookback: 6, drift: 0, moving: false });
+      assert.equal(flip.score, (1 * 300 * 300 * 1) / 6);
       assert.match(body.meta.ranking, /not a validated profit estimate/);
 
       // Unknown leagues and bad parameters are refused like the market list.

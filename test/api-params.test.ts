@@ -39,7 +39,8 @@ describe('parseMarketListParams', () => {
   });
 
   it('accepts the three metric windows only', () => {
-    assert.equal(parseMarketListParams(params('league=M&window=6h')).window, 6);
+    assert.equal(parseMarketListParams(params('league=M&window=24h')).window, 24);
+    rejects(() => parseMarketListParams(params('league=M&window=6h')), 'window');
     rejects(() => parseMarketListParams(params('league=M&window=2h')), 'window');
     rejects(() => parseMarketListParams(params('league=M&window=7d')), 'window');
   });

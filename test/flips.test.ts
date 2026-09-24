@@ -53,10 +53,11 @@ describe('flipRow', () => {
       gold_per_flip: 100,
       chaos_per_1k_gold: 300,
       score: 90000,
+      held: { hours: 5, checked: 6, lookback: 6, drift: 0.05, moving: false },
     });
     assert.deepEqual(
-      [row.rank, row.buy, row.sell, row.sellChaos, row.margin, row.marginPct, row.gold, row.perGold, row.turnover, row.score, row.loss],
-      ['3', '30.0c', '5.0 per div', '60.0c', '30.0c', '100%', '100', '300.0c', '300c/h', '90k', false],
+      [row.rank, row.buy, row.sell, row.sellChaos, row.margin, row.marginPct, row.gold, row.perGold, row.turnover, row.score, row.held, row.loss],
+      ['3', '30.0c', '5.0 per div', '60.0c', '30.0c', '100%', '100', '300.0c', '300c/h', '90k', '5/6', false],
     );
   });
 });

@@ -1,6 +1,6 @@
 # Market metrics
 
-Status: calculation version 4, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4); version 2 changed the ranking score, version 3 added gold, version 4 put gold into the score). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
+Status: calculation version 5, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4); version 2 changed the ranking score, version 3 added gold, version 4 put gold into the score, version 5 added the held check and dropped the 6h window). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
 
 **The rank orders research candidates; it is not a profit estimate.** A high rank means a wide traded price range relative to the price, in a market where a lot of Chaos changes hands steadily and the data is complete. The range comes from executed trades at different moments, not from a spread anyone could capture, so a high rank does not mean a flip will fill or pay. Estimating profit over time is gated on [#7](https://github.com/stdmitry/pathofflipper/issues/7).
 
@@ -8,7 +8,7 @@ Status: calculation version 4, 2026-09-24 ([#4](https://github.com/stdmitry/path
 
 - PoE 1 PC, every **public** league present in the window, and markets **quoted directly in Chaos Orbs or in Divine Orbs**, screened separately (`src/market/quotes.ts`). Each quote has its own snapshot and ranking. Prices, turnover and scores are in that quote's units, so they are not compared across quotes, and nothing is converted between them. (Chaos Orb is one of the pair's two items). Other pairs stay in `pair_hours` for later. Private leagues, named `… (PL<number>)` (`leagues.private`), are skipped: 2,002 of the first 2,034 stored leagues were private, and they are not markets a player can join.
 - Rates read as **Chaos per one unit of the other item** (the base). The upstream pair order is ignored: `quoteHour` re-orients every market.
-- Windows are the last **1, 6 and 24 hours**, ending with the as-of hour. The as-of hour is the newest parsed hour by default.
+- Windows are the last **hour** and the last **24 hours**, ending with the as-of hour, which is the newest parsed hour by default. The 1h window finds opportunities. The 24h window is context only, since flipping happens within hours. A 6h window was dropped: too slow for flipping and too short for context.
 
 ## Hours
 
@@ -67,6 +67,16 @@ How the defaults were checked, on Mirage's 24h window ending 2026-04-15 12:00 UT
 - Under version 1, the top ranks were Divine Orb (328.6 c, range 300–345, volatility 0.010), The Black Barya, Valdo's Puzzle Box, Horned Scarab of Bloodlines and others. Stacked Deck (rank 7) shows why the range is not a spread: a 0.02 c low against a 4.06 c weighted rate.
 
 Chaos turnover depends on each league's economy, so re-check these distributions at league start. Changing a threshold or definition means bumping `CALC_VERSION`.
+
+## Held check (1h window)
+
+A wide low–high range in one hour can be a lasting gap between buyers and sellers, or a price that moved during the hour. The newest hour is therefore compared with the **6 previous hours**, each measured on its own low and high (`heldCheck`, stored as `held_hours`, `checked_hours`, `price_drift` and `moving`):
+
+- **Held:** the previous hours with trades whose own margin was at least **half** the newest hour's. For a single market the margin is (high − low) / low. For the Chaos → Divine view it is the hour's (Divine high × Chaos/Divine rate − Chaos low) / Chaos low. Hours without trades or without data never count as held.
+- **Moving:** across the newest and previous hours, the hourly volume-weighted price drifted (max − min) / min by more than the newest margin. The gap is then likely a price move, not a lasting spread. Moving markets get no rank.
+- **Score:** in the 1h window the score is multiplied by held / 6. A gap seen only in the newest hour scores 0.
+
+A price that jumps within the newest hour widens only that hour's range, so few previous hours hold. A price that trends over the hours shows as moving. Only using each hour's own low and high also keeps a single odd trade from defining the price for several hours.
 
 ## Gold
 

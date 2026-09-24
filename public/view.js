@@ -6,7 +6,7 @@
  * @typedef {{ name: string, path: string, category: string, named: boolean }} Item
  * @typedef {{
  *   id: string, item: Item, rank: number | null, score?: number | null, gold_per_flip?: number | null,
- *   quote_per_1k_gold?: number | null, eligible: boolean, window_hours: number,
+ *   quote_per_1k_gold?: number | null, held?: Held | null, eligible: boolean, window_hours: number,
  *   covered_hours: number,
  *   traded_hours: number, coverage: number, persistence: number, turnover_per_hour: number | null,
  *   units_per_hour: number | null, volume: { quote: string, base: string }, rate: Rate | null,
@@ -134,6 +134,18 @@ export function hourText(iso) {
   return iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : DASH;
 }
 
+/** @typedef {{ hours: number, checked: number, lookback: number, drift: number | null, moving: boolean }} Held */
+
+/**
+ * The held check: "5/6" means 5 of the 6 previous hours showed at least half the newest hour's margin. Only the 1h
+ * window has it.
+ * @param {Held | null | undefined} held
+ */
+export function heldText(held) {
+  if (!held) return DASH;
+  return `${held.hours}/${held.lookback}${held.moving ? ' · moving' : ''}`;
+}
+
 /** One table row, every cell as display text. @param {Market} m @param {Quote} [quote] */
 export function marketRow(m, quote = 'chaos') {
   return {
@@ -147,6 +159,8 @@ export function marketRow(m, quote = 'chaos') {
     high: rateText(m.high_rate, quote),
     range: differenceText(m.low_rate, m.high_rate, quote),
     score: compact(scoreOf(m)),
+    held: heldText(m.held),
+    moving: m.held?.moving ?? false,
     // Gold to buy one unit at the low and sell it at the high, and what that round trip earns per 1,000 gold.
     gold: compact(m.gold_per_flip),
     perGold:
@@ -210,7 +224,7 @@ export function statusCounts(statuses) {
  *   id: string, item: Item, rank: number | null, eligible: boolean, buy: Rate | null, sell: Rate | null,
  *   sell_chaos: number | null, margin_chaos: number | null, margin_share: number | null,
  *   turnover_per_hour: number | null, gold_per_flip: number | null, chaos_per_1k_gold: number | null,
- *   score: number | null
+ *   score: number | null, held: Held | null
  * }} FlipMarket
  */
 
@@ -232,6 +246,8 @@ export function flipRow(f) {
     gold: compact(f.gold_per_flip),
     perGold: chaos(f.chaos_per_1k_gold),
     turnover: f.turnover_per_hour === null ? DASH : `${compact(f.turnover_per_hour)}c/h`,
+    held: heldText(f.held),
+    moving: f.held?.moving ?? false,
     eligible: f.eligible,
     loss: f.margin_chaos !== null && f.margin_chaos <= 0,
   };
@@ -241,9 +257,9 @@ export function flipRow(f) {
 
 /**
  * @typedef {{
- *   league: string, quote: View, window: '1h' | '6h' | '24h', scope: 'eligible' | 'all',
+ *   league: string, quote: View, window: '1h' | '24h', scope: 'eligible' | 'all',
  *   sort: 'rank' | 'score' | 'gold' | 'per_gold' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'low' | 'high'
- *     | 'range' | 'name' | 'margin' | 'margin_pct' | 'buy' | 'sell',
+ *     | 'range' | 'name' | 'margin' | 'margin_pct' | 'buy' | 'sell' | 'held',
  *   order: '' | 'asc' | 'desc',
  *   q: string, offset: number, market: string, history: '24h' | '7d' | '30d'
  * }} State
@@ -265,11 +281,11 @@ export const DEFAULT_STATE = Object.freeze({
 
 const CHOICES = /** @type {Record<string, readonly string[]>} */ ({
   quote: ['chaos', 'divine', 'flip'],
-  window: ['1h', '6h', '24h'],
+  window: ['1h', '24h'],
   scope: ['eligible', 'all'],
   sort: [
     'rank', 'score', 'gold', 'per_gold', 'turnover', 'units', 'persistence', 'volatility', 'low', 'high', 'range', 'name',
-    'margin', 'margin_pct', 'buy', 'sell',
+    'margin', 'margin_pct', 'buy', 'sell', 'held',
   ],
   order: ['', 'asc', 'desc'],
   history: ['24h', '7d', '30d'],

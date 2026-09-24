@@ -8,7 +8,9 @@ import {
   CALC_VERSION,
   coverage,
   flipGold,
+  HOLD_SHARE,
   isStale,
+  LOOKBACK_HOURS,
   persistence,
   quotePerHour,
   sourceAgeHours,
@@ -37,6 +39,10 @@ export const UNITS = {
   gold_per_flip:
     'gold to buy one unit at the low and sell it at the high; an order costs the wanted item fee per unit wanted',
   quote_per_1k_gold: 'quote units earned per 1,000 gold on that round trip, from the range extremes (an upper bound)',
+  held:
+    `1h window: of the ${LOOKBACK_HOURS} previous hours, those with trades (checked) and those whose own margin was at ` +
+    `least ${HOLD_SHARE * 100}% of the newest hour's (hours); moving means the price drifted by more than the margin, ` +
+    'so the gap is likely a price move; moving markets are not ranked, and the score counts only the held share',
   stock: 'sampled quantity in unfilled orders, in units of that item; not trade liquidity',
   source_age_hours: `hours since the newest source hour ended; stale after ${STALE_AFTER_HOURS}`,
 } as const;
@@ -157,6 +163,7 @@ const SORT_SQL: Record<MarketSort, string> = {
   score: 'm.rank_score',
   gold: 'm.gold_per_flip',
   per_gold: 'm.quote_per_kgold',
+  held: 'm.held_hours',
   name: 'lower(coalesce(base.display_name, base.metadata_path))',
 };
 
@@ -180,6 +187,10 @@ interface MetricRow {
   rank_score: number | null;
   gold_per_flip: number | null;
   quote_per_kgold: number | null;
+  held_hours: number | null;
+  checked_hours: number | null;
+  price_drift: number | null;
+  moving: boolean | null;
   activity_rank: number | null;
 }
 
@@ -210,6 +221,12 @@ function summaryJson(m: WindowMetrics, baseFee: number | null, quoteFee: number 
     quote_per_1k_gold: gold?.quotePerKgold ?? null,
     gold_fees: { base: baseFee, quote: quoteFee },
   };
+}
+
+/** The held check as JSON, or null outside the 1h window. */
+export function heldJson(hours: number | null, checked: number | null, drift: number | null, moving: boolean | null) {
+  if (hours === null || checked === null || moving === null) return null;
+  return { hours, checked, lookback: LOOKBACK_HOURS, drift, moving };
 }
 
 export function itemJson(path: string, name: string | null, category: string) {
@@ -248,7 +265,7 @@ export async function listMarkets(pool: pg.Pool, params: MarketListParams, now: 
     `SELECT count(*) OVER () AS total, base.metadata_path, base.display_name, base.category, m.window_hours,
        m.covered_hours, m.traded_hours, m.base_volume, m.quote_volume, m.rate_num, m.rate_den, m.low_rate_num,
        m.low_rate_den, m.high_rate_num, m.high_rate_den, m.volatility, m.rank_score, m.gold_per_flip,
-       m.quote_per_kgold, m.activity_rank
+       m.quote_per_kgold, m.held_hours, m.checked_hours, m.price_drift, m.moving, m.activity_rank
      FROM market_metrics m
      JOIN pairs p ON p.id = m.pair_id
      JOIN items base ON base.id = CASE WHEN p.item_a_id = $4 THEN p.item_b_id ELSE p.item_a_id END
@@ -265,6 +282,7 @@ export async function listMarkets(pool: pg.Pool, params: MarketListParams, now: 
       score: row.rank_score,
       gold_per_flip: row.gold_per_flip,
       quote_per_1k_gold: row.quote_per_kgold,
+      held: heldJson(row.held_hours, row.checked_hours, row.price_drift, row.moving),
       eligible: row.activity_rank !== null,
       ...metricsJson({
         windowHours: row.window_hours,

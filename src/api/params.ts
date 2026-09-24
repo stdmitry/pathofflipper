@@ -17,7 +17,7 @@ export class InvalidParameterError extends Error {
 export const QUOTES: Record<Quote, string> = { chaos: QUOTE_ITEMS.chaos.path, divine: QUOTE_ITEMS.divine.path };
 export type { Quote };
 
-export const MARKET_SORTS = ['rank', 'turnover', 'units', 'persistence', 'volatility', 'rate', 'low', 'high', 'range', 'score', 'gold', 'per_gold', 'name'] as const;
+export const MARKET_SORTS = ['rank', 'turnover', 'units', 'persistence', 'volatility', 'rate', 'low', 'high', 'range', 'score', 'gold', 'per_gold', 'held', 'name'] as const;
 export type MarketSort = (typeof MARKET_SORTS)[number];
 
 /** History windows in hours; 30 days bounds a response to 720 points. */
@@ -41,7 +41,7 @@ export interface MarketListParams {
   offset: number;
 }
 
-export const FLIP_SORTS = ['rank', 'score', 'margin', 'margin_pct', 'per_gold', 'gold', 'turnover', 'buy', 'sell', 'name'] as const;
+export const FLIP_SORTS = ['rank', 'score', 'margin', 'margin_pct', 'per_gold', 'gold', 'turnover', 'buy', 'sell', 'held', 'name'] as const;
 export type FlipSort = (typeof FLIP_SORTS)[number];
 
 export interface FlipListParams {

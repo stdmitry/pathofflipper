@@ -7,7 +7,7 @@ import { CALC_VERSION } from '../market/metrics.ts';
 import { QUOTE_NAMES } from '../market/quotes.ts';
 import { computeMetrics } from '../metrics-run.ts';
 
-const USAGE = `Compute market metrics for Chaos Orb and Divine Orb markets over the last 1, 6 and 24 hours.
+const USAGE = `Compute market metrics for Chaos Orb and Divine Orb markets over the last hour and the last 24 hours.
 
 Usage: npm run metrics [-- --as-of <hour>]
 

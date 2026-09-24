@@ -26,7 +26,8 @@ function marketColumns(quote) {
     { label: 'Low', title: 'Lowest price paid in a trade during the window', sort: 'low', num: true, cell: (r) => r.low, cls: () => 'strong' },
     { label: 'High', title: 'Highest price paid in a trade during the window', sort: 'high', num: true, cell: (r) => r.high, cls: () => 'strong' },
     { label: 'High − Low', title: 'Highest minus lowest price paid; not a spread you can capture', sort: 'range', num: true, cell: (r) => r.range },
-    { label: 'Score', title: `(High − Low) / Low × ${unit.column} × Per 1k gold`, sort: 'score', num: true, cell: (r) => r.score, cls: () => 'strong' },
+    { label: 'Score', title: `(High − Low) / Low × ${unit.column} × Per 1k gold × held share`, sort: 'score', num: true, cell: (r) => r.score, cls: () => 'strong' },
+    { label: 'Held', title: 'Of the 6 previous hours, how many showed at least half the newest hour\'s margin (1h window only). "moving": the price drifted by more than the margin, so the gap is likely a price move; such rows are not ranked, and the score counts only the held share', sort: 'held', num: true, cell: (r) => r.held, cls: (r) => (r.moving ? 'warn' : '') },
     { label: 'Gold/flip', title: "Gold to buy one unit at Low and sell it at High; an order costs the wanted item's fee per unit wanted", sort: 'gold', num: true, cell: (r) => r.gold },
     { label: 'Per 1k gold', title: 'What that flip earns per 1,000 gold; an upper bound, since Low and High are extremes', sort: 'per_gold', num: true, cell: (r) => r.perGold },
     { label: unit.column, title: `${unit.name} traded per covered hour`, sort: 'turnover', num: true, cell: (r) => r.turnover },
@@ -46,7 +47,8 @@ const FLIP_COLUMNS = [
   { label: 'Sell in c', title: "The Divine price in Chaos, at the window's Chaos/Divine rate", num: true, cell: (r) => r.sellChaos },
   { label: 'Margin', title: 'Sell in Chaos minus buy, per unit; an upper bound', sort: 'margin', num: true, cell: (r) => r.margin, cls: (r) => (r.loss ? 'warn' : 'strong') },
   { label: 'Margin %', title: 'Margin / buy', sort: 'margin_pct', num: true, cell: (r) => r.marginPct },
-  { label: 'Score', title: 'Margin % × Chaos/h × Per 1k gold', sort: 'score', num: true, cell: (r) => r.score, cls: () => 'strong' },
+  { label: 'Score', title: 'Margin % × Chaos/h × Per 1k gold × held share', sort: 'score', num: true, cell: (r) => r.score, cls: () => 'strong' },
+  { label: 'Held', title: 'Of the 6 previous hours, how many showed at least half the newest hour\'s margin (1h window only). "moving": the price drifted by more than the margin, so the gap is likely a price move; such rows are not ranked, and the score counts only the held share', sort: 'held', num: true, cell: (r) => r.held, cls: (r) => (r.moving ? 'warn' : '') },
   { label: 'Gold/flip', title: "Gold to buy one unit (its fee) and sell it for Divines (250 per Divine wanted)", sort: 'gold', num: true, cell: (r) => r.gold },
   { label: 'Per 1k gold', title: 'Margin per 1,000 gold spent on the two orders', sort: 'per_gold', num: true, cell: (r) => r.perGold },
   { label: 'Chaos/h', title: 'Chaos traded per covered hour in the slower of the two markets', sort: 'turnover', num: true, cell: (r) => r.turnover },
@@ -172,7 +174,8 @@ async function loadMarkets() {
       const rate = body.meta.divine_rate === null ? 'no Chaos/Divine rate in this window' : `1 Divine valued at ${body.meta.divine_rate.toFixed(1)}c`;
       $('table-meta').textContent =
         `${state.window} window ending ${view.hourText(body.meta.as_of_hour)} · buy at the Chaos market's Low, sell at the ` +
-        `Divine market's High · ${rate} (the window's Chaos/Divine rate) · ranked by Margin % × Chaos/h × Per 1k gold, ` +
+        `Divine market's High · ${rate} (the window's Chaos/Divine rate) · ranked by Margin % × Chaos/h × Per 1k gold` +
+        `${state.window === '1h' ? ' × held share, leaving out moving prices' : ''}, ` +
         'among items eligible in both markets with a positive margin';
     } else {
       const body = await api('/api/markets', view.marketQuery(state, PAGE_SIZE), request.signal);
@@ -181,7 +184,8 @@ async function loadMarkets() {
       renderRows(body.data.map((/** @type {view.Market} */ m) => view.marketRow(m, quote)));
       $('table-meta').textContent =
         `${state.window} window ending ${view.hourText(body.meta.as_of_hour)} · calculation v${body.meta.calc_version} · ` +
-        `ranked by score = (High − Low) / Low × ${unit.column} × Per 1k gold, among markets with ≥75% coverage, ` +
+        `ranked by score = (High − Low) / Low × ${unit.column} × Per 1k gold${state.window === '1h' ? ' × held share' : ''}, ` +
+        'among markets with ≥75% coverage, ' +
         `trades in ≥50% of hours and ≥${unit.minPerHour}`;
     }
   } catch (error) {

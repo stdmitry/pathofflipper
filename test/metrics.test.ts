@@ -12,6 +12,9 @@ import {
   persistence,
   quotePerHour,
   flipGold,
+  heldCheck,
+  hourMargin,
+  LOOKBACK_HOURS,
   rankMarkets,
   rankScore,
   sourceAgeHours,
@@ -217,6 +220,42 @@ describe('rankMarkets', () => {
       ['flat-small', 5],
       ['no-fee', 6],
     ]);
+  });
+});
+
+describe('heldCheck', () => {
+  const m = (margin: number | null, price: number | null = 100) => ({ margin, price });
+
+  it('counts previous hours with at least half the newest margin, ignoring hours without trades', () => {
+    // Newest margin 20%: hours with 10% or more hold.
+    const held = heldCheck(m(0.2), [m(0.25), m(0.1), m(0.09), m(null, null), m(0.3), m(0.02)]);
+    assert.deepEqual([held.checkedHours, held.heldHours, held.moving], [5, 3, false]);
+    assert.equal(LOOKBACK_HOURS, 6);
+  });
+
+  it('flags a price that drifted by more than the margin as moving', () => {
+    // A 10% margin while the price climbed from 100 to 130 over the hours: a move, not a lasting gap.
+    const moving = heldCheck(m(0.1, 130), [m(0.1, 120), m(0.1, 110), m(0.1, 100)]);
+    assert.ok(Math.abs(moving.drift! - 0.3) < 1e-12);
+    assert.equal(moving.moving, true);
+    // The same margin around a steady price holds.
+    const steady = heldCheck(m(0.1, 101), [m(0.1, 100), m(0.1, 102), m(0.1, 100)]);
+    assert.deepEqual([steady.heldHours, steady.moving], [3, false]);
+  });
+
+  it('holds nothing when the newest hour had no trades', () => {
+    const held = heldCheck(m(null, null), [m(0.2), m(0.3)]);
+    assert.deepEqual([held.checkedHours, held.heldHours, held.moving], [2, 0, false]);
+  });
+});
+
+describe('hourMargin', () => {
+  it('is an hour\'s own (high − low) / low and its rate', () => {
+    const hour = tradeRange(3000, 10, 280, 350);
+    const margin = hourMargin(hour.quoted);
+    assert.ok(Math.abs(margin.margin! - 0.25) < 1e-12);
+    assert.equal(margin.price, 300);
+    assert.deepEqual(hourMargin(undefined), { margin: null, price: null });
   });
 });
 

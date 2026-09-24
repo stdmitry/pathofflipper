@@ -5,9 +5,16 @@ import { compareRational, isCovered, type HourStatus, type QuotedHour, type Rati
  * Market activity metrics over trailing windows. The definitions, thresholds and their rationale are documented in
  * specs/market-metrics.md. Bump CALC_VERSION whenever a definition or threshold changes.
  */
-export const CALC_VERSION = 4;
+export const CALC_VERSION = 5;
 
-export const WINDOWS = [1, 6, 24] as const;
+/** 1h finds opportunities; 24h is context. A 6h window was dropped as too slow for flipping and too short for context. */
+export const WINDOWS = [1, 24] as const;
+
+/** Previous hours checked for whether the newest hour's opportunity held (see heldCheck). */
+export const LOOKBACK_HOURS = 6;
+
+/** A previous hour holds when its own margin is at least this share of the newest hour's. */
+export const HOLD_SHARE = 0.5;
 export type WindowHours = (typeof WINDOWS)[number];
 
 /** Default screening thresholds, applied to each window. See specs/market-metrics.md for how they were chosen. */
@@ -132,14 +139,14 @@ export function rankScore(m: WindowMetrics, quotePerKgold: number | null): numbe
 
 /**
  * Ranks for one league and window: eligible markets by score (rankScore), highest first, then turnover, then key for
- * a stable order. Eligible markets without a score (no known gold fee) rank after all scored ones. Ineligible markets
- * get no rank.
+ * a stable order. Eligible markets without a score (no known gold fee) rank after all scored ones. Ineligible and
+ * excluded (moving) markets get no rank.
  */
 export function rankMarkets<K>(
-  markets: { key: K; sortKey: string; metrics: WindowMetrics; score: number | null }[],
+  markets: { key: K; sortKey: string; metrics: WindowMetrics; score: number | null; excluded?: boolean }[],
   minQuotePerHour: number = ELIGIBILITY.minQuotePerHour,
 ): Map<K, number> {
-  const eligible = markets.filter((m) => isEligible(m.metrics, minQuotePerHour));
+  const eligible = markets.filter((m) => !m.excluded && isEligible(m.metrics, minQuotePerHour));
   eligible.sort(
     (x, y) =>
       (y.score ?? -1) - (x.score ?? -1) ||
@@ -167,6 +174,49 @@ export function flipGold(m: WindowMetrics, baseFee: number | null, quoteFee: num
   const high = toNumber(m.highRate);
   const goldPerFlip = baseFee + quoteFee * high;
   return { goldPerFlip, quotePerKgold: goldPerFlip > 0 ? ((high - low) / goldPerFlip) * 1000 : null };
+}
+
+/** One hour's opportunity: its relative margin and a reference price, both null when the hour had no trades. */
+export interface HourMargin {
+  margin: number | null;
+  price: number | null;
+}
+
+export interface HeldCheck {
+  /** Previous hours with trades, out of LOOKBACK_HOURS. */
+  checkedHours: number;
+  /** Previous hours whose margin was at least HOLD_SHARE of the newest hour's. */
+  heldHours: number;
+  /** (max − min) / min of the reference price over the newest and previous hours; null with fewer than 2 prices. */
+  drift: number | null;
+  /** The price drifted by more than the newest margin: the gap likely comes from a price move, not a lasting spread. */
+  moving: boolean;
+}
+
+/**
+ * Tells a lasting opportunity from a price move: counts the previous hours that showed a similar margin, and compares
+ * the drift of the price across those hours with the newest margin. A price that jumps within the newest hour widens
+ * that hour's low–high range but not the earlier ones, so few hours hold; a price that trends drifts by more than the
+ * margin. Unknown hours never count as held.
+ */
+export function heldCheck(current: HourMargin, previous: HourMargin[]): HeldCheck {
+  const checked = previous.filter((p) => p.margin !== null);
+  const target = HOLD_SHARE * (current.margin ?? Number.POSITIVE_INFINITY);
+  const prices = [current, ...previous].map((p) => p.price).filter((p): p is number => p !== null && p > 0);
+  const drift = prices.length >= 2 ? (Math.max(...prices) - Math.min(...prices)) / Math.min(...prices) : null;
+  return {
+    checkedHours: checked.length,
+    heldHours: checked.filter((p) => p.margin! >= target).length,
+    drift,
+    moving: drift !== null && current.margin !== null && current.margin > 0 && drift > current.margin,
+  };
+}
+
+/** A single market's hour: its own (high − low) / low as the margin and its volume-weighted rate as the price. */
+export function hourMargin(q: QuotedHour | undefined): HourMargin {
+  if (!q?.rate || !q.lowRate || !q.highRate) return { margin: null, price: null };
+  const low = toNumber(q.lowRate);
+  return { margin: (toNumber(q.highRate) - low) / low, price: toNumber(q.rate) };
 }
 
 /** Hours between the end of the newest source hour and `now`. Hour H is complete at H + 1h. */
