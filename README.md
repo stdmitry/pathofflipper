@@ -33,9 +33,10 @@ npm run fetch                          # up to 24 hours, resuming from the store
 npm run fetch -- --max-hours 3         # smaller batch
 npm run fetch -- --help
 npm run parse                          # parse every fetched hour not parsed yet into pair_hours
+npm run metrics                        # recompute Chaos market metrics as of the newest parsed hour
 ```
 
-Fetch stores only raw responses, so run `npm run parse` afterwards, for example `npm run fetch; npm run parse` in a schedule. Use `;` rather than `&&` so that hours fetched before a failure still get parsed.
+Fetch stores only raw responses, so run `npm run parse` and then `npm run metrics` afterwards, for example `npm run fetch; npm run parse; npm run metrics` in a schedule. Use `;` rather than `&&` so that hours fetched before a failure still get parsed and counted.
 
 Every run, manual or scheduled, fetches PoE 1 PC only. `--realm` and `POE_REALM` accept only `pc`; any other value, such as `xbox` or `sony`, exits with 2 before connecting to the database or the API.
 
@@ -64,6 +65,24 @@ Validation requires every numeric value to be an integer within ±2^53, each num
 `volume_traded` holds both sides of the same trades. The ratios are reduced `a:b` fractions giving the lowest and highest executed rate, and they are 0 when nothing traded. Stock is sampled unfilled-order quantity. Pair order is not a quote convention, so code reads markets through [`src/market/semantics.ts`](./src/market/semantics.ts) (`quoteHour`, `windowRate`, `classifyHour`) rather than through the `_a`/`_b` columns. The evidence, the metrics this supports and what remains open are in [API observations](./specs/exchange-api-observations.md#field-semantics).
 
 `npm run check-semantics [-- --league <name>]` checks stored `pair_hours` against the invariants these rules rely on. It exits with 1 if any is violated. Run it when a new league starts.
+
+## Metrics
+
+`npm run metrics` computes activity metrics for every Chaos-quoted market over the last 1, 6 and 24 hours: coverage, turnover, traded units, persistence, a volume-weighted rate, the executed-rate range and volatility. It replaces the stored snapshot (`metric_runs`, `market_metrics`) in one transaction. `--as-of <hour>` recomputes an earlier hour. Eligible markets get an `activity_rank` by Chaos turnover. **The rank measures activity, not profitability.** Definitions, thresholds and the data behind them are in [Market metrics](./specs/market-metrics.md).
+
+```sql
+-- Top markets of a league over the last 24 hours
+SELECT m.activity_rank, coalesce(i.display_name, i.metadata_path) AS item, round(m.rate_num::numeric / m.rate_den, 2) AS chaos_each,
+       round(m.quote_per_hour) AS chaos_per_hour, m.traded_hours || '/' || m.covered_hours AS traded_of_covered,
+       round(m.volatility::numeric, 3) AS volatility, r.as_of_hour
+FROM market_metrics m
+JOIN metric_runs r ON r.id = m.run_id
+JOIN leagues l ON l.id = m.league_id
+JOIN pairs p ON p.id = m.pair_id
+JOIN items i ON i.id = CASE WHEN p.item_a_id = r.quote_item_id THEN p.item_b_id ELSE p.item_a_id END
+WHERE l.name = 'Mirage' AND m.window_hours = 24 AND m.activity_rank IS NOT NULL
+ORDER BY m.activity_rank LIMIT 20;
+```
 
 ## Storage
 

@@ -42,7 +42,7 @@ describe('ingest (PostgreSQL)', { skip }, () => {
 
   beforeEach(async () => {
     await pool.query(
-      'TRUNCATE pair_hours, pairs, items, leagues, raw_digests, ingestion_cursors, rejected_responses RESTART IDENTITY',
+      'TRUNCATE pair_hours, pairs, items, leagues, raw_digests, ingestion_cursors, rejected_responses RESTART IDENTITY CASCADE',
     );
   });
 

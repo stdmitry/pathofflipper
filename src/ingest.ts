@@ -8,6 +8,7 @@ import { errorMessage, silentLogger, type Logger } from './log.ts';
 // Advisory lock namespaces; the second key is the realm, kept so the ingest lock matches earlier releases.
 const INGEST_LOCK_NAMESPACE = 7_319_001;
 const PARSE_LOCK_NAMESPACE = 7_319_002;
+const METRICS_LOCK_NAMESPACE = 7_319_003;
 
 export interface IngestOptions {
   /** Upper bound on hours stored in this run. */
@@ -44,6 +45,11 @@ export function withIngestLock<T>(pool: pg.Pool, fn: () => Promise<T>): Promise<
 /** Runs `fn` while holding the PC parse lock, shared by parse and rebuild so pair_hours has one writer. */
 export function withParseLock<T>(pool: pg.Pool, fn: () => Promise<T>): Promise<T> {
   return withRealmLock(pool, PARSE_LOCK_NAMESPACE, 'parse or rebuild', fn);
+}
+
+/** Runs `fn` while holding the PC metrics lock, so two metric runs never replace each other's snapshot. */
+export function withMetricsLock<T>(pool: pg.Pool, fn: () => Promise<T>): Promise<T> {
+  return withRealmLock(pool, METRICS_LOCK_NAMESPACE, 'metrics run', fn);
 }
 
 async function withRealmLock<T>(pool: pg.Pool, namespace: number, holders: string, fn: () => Promise<T>): Promise<T> {

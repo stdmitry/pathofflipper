@@ -67,7 +67,7 @@ describe('rebuild and the market_hours drop (PostgreSQL)', { skip }, () => {
 
   beforeEach(async () => {
     await pool.query(
-      'TRUNCATE market_hours, pair_hours, pairs, items, leagues, raw_digests, ingestion_cursors, rejected_responses RESTART IDENTITY',
+      'TRUNCATE market_hours, pair_hours, pairs, items, leagues, raw_digests, ingestion_cursors, rejected_responses RESTART IDENTITY CASCADE',
     );
   });
 
@@ -160,7 +160,11 @@ describe('rebuild and the market_hours drop (PostgreSQL)', { skip }, () => {
     await assert.rejects(runMigrations(pool), /not fully rebuilt/);
 
     await rebuild(pool, { itemNames });
-    assert.deepEqual(await runMigrations(pool), ['0003_drop_market_hours.sql', '0004_separate_parsing.sql']);
+    assert.deepEqual(await runMigrations(pool), [
+      '0003_drop_market_hours.sql',
+      '0004_separate_parsing.sql',
+      '0005_market_metrics.sql',
+    ]);
     const { rows } = await pool.query(`SELECT to_regclass('market_hours') AS t`);
     assert.equal(rows[0]?.t, null);
     // Rebuilt digests count as parsed, so the parse stage has nothing left to do.

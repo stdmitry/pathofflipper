@@ -1,0 +1,165 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { after, before, beforeEach, describe, it } from 'node:test';
+import pg from 'pg';
+import { runMigrations } from '../src/db/migrate.ts';
+import { ConcurrentRunError, ingest, withMetricsLock } from '../src/ingest.ts';
+import { CALC_VERSION } from '../src/market/metrics.ts';
+import { CHAOS_PATH, computeMetrics } from '../src/metrics-run.ts';
+import { parsePending } from '../src/parse-hours.ts';
+import { FakeExchange, H0, HOUR, resetSchema, skipWithoutDatabase as skip, TEST_DATABASE_URL } from './support.ts';
+
+// Three real Mirage hours (trimmed), served here as H0 .. H0+2h.
+const mirage = JSON.parse(
+  readFileSync(new URL('./fixtures/pc-mirage-1776247200-3h.json', import.meta.url), 'utf8'),
+) as { hours: { body: { markets: unknown[] } }[] };
+
+const DIVINE = 'Metadata/Items/Currency/CurrencyModValues';
+const CHROMATIC = 'Metadata/Items/Currency/CurrencyRerollSocketColours';
+const MIRROR = 'Metadata/Items/Currency/CurrencyDuplicate';
+/** Chaos markets in the fixture: Divine, Chromatic, The Hunger, an Essence and the Mirror. */
+const CHAOS_MARKETS = 5;
+
+interface MetricRow {
+  window_hours: number;
+  covered_hours: number;
+  traded_hours: number;
+  quote_volume: string;
+  base_volume: string;
+  rate_num: string | null;
+  rate_den: string | null;
+  quote_per_hour: string | null;
+  activity_rank: number | null;
+}
+
+describe('computeMetrics (PostgreSQL)', { skip }, () => {
+  let pool: pg.Pool;
+
+  /** Fetches and parses the Mirage hours at H0..H0+2h and an empty (exchange-down) response at H0+3h. */
+  async function load(): Promise<void> {
+    const exchange = new FakeExchange(4);
+    mirage.hours.forEach(({ body }, i) => {
+      const cursor = H0 + i * HOUR;
+      exchange.overrides.set(cursor, { url: 'fake', status: 200, body: JSON.stringify({ ...body, next_change_id: cursor + HOUR }) });
+    });
+    const empty = H0 + 3 * HOUR;
+    exchange.overrides.set(empty, { url: 'fake', status: 200, body: JSON.stringify({ next_change_id: empty + HOUR, markets: [] }) });
+    await ingest(pool, exchange, { maxHours: 5, start: { kind: 'hour', cursor: H0 } });
+    await parsePending(pool, { itemNames: new Map([[CHAOS_PATH, 'Chaos Orb']]) });
+  }
+
+  async function metricsFor(item: string): Promise<Map<number, MetricRow>> {
+    const { rows } = await pool.query<MetricRow>(
+      `SELECT m.window_hours, m.covered_hours, m.traded_hours, m.quote_volume, m.base_volume, m.rate_num, m.rate_den,
+         m.quote_per_hour, m.activity_rank
+       FROM market_metrics m JOIN pairs p ON p.id = m.pair_id
+       JOIN items i ON i.id IN (p.item_a_id, p.item_b_id) AND i.metadata_path = $1`,
+      [item],
+    );
+    return new Map(rows.map((row) => [row.window_hours, row]));
+  }
+
+  /** Stored volume_traded of Chaos/`item` for each fixture hour, as [chaos, other]. */
+  function volumes(item: string): [bigint, bigint][] {
+    return mirage.hours.map(({ body }) => {
+      const market = (body.markets as { market_pair: string[]; volume_traded: Record<string, number> }[]).find(
+        (m) => m.market_pair.includes(CHAOS_PATH) && m.market_pair.includes(item),
+      );
+      return market ? [BigInt(market.volume_traded[CHAOS_PATH]!), BigInt(market.volume_traded[item]!)] : [0n, 0n];
+    });
+  }
+
+  before(async () => {
+    pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
+    await resetSchema(pool);
+    await runMigrations(pool);
+  });
+
+  after(async () => {
+    await pool?.end();
+  });
+
+  beforeEach(async () => {
+    await pool.query(
+      `TRUNCATE metric_runs, market_metrics, pair_hours, pairs, items, leagues, raw_digests, ingestion_cursors,
+         rejected_responses RESTART IDENTITY CASCADE`,
+    );
+  });
+
+  it('does nothing before any hour is parsed', async () => {
+    const summary = await computeMetrics(pool);
+    assert.equal(summary.asOfHour, null);
+    assert.equal((await pool.query('SELECT 1 FROM metric_runs')).rowCount, 0);
+  });
+
+  it('ends the windows at the newest parsed hour and keeps unknown hours out of coverage', async () => {
+    await load();
+    const summary = await computeMetrics(pool);
+    assert.equal(summary.asOfHour, H0 + 3 * HOUR);
+    assert.deepEqual(summary.windowHours, { parsed: 3, empty: 1, missing: 20 });
+    assert.deepEqual([summary.leagues, summary.markets, summary.rows], [1, CHAOS_MARKETS, CHAOS_MARKETS * 3]);
+
+    const divine = await metricsFor(DIVINE);
+    // 1h: only the exchange-down hour, so nothing is covered and turnover is unknown rather than zero.
+    assert.deepEqual([divine.get(1)?.covered_hours, divine.get(1)?.quote_per_hour, divine.get(1)?.rate_num], [0, null, null]);
+    // 6h and 24h: the three Mirage hours are covered; the rest is missing or down.
+    const v = volumes(DIVINE);
+    const chaos = v.reduce((sum, [c]) => sum + c, 0n);
+    const div = v.reduce((sum, [, d]) => sum + d, 0n);
+    for (const window of [6, 24]) {
+      const row = divine.get(window)!;
+      assert.deepEqual([row.covered_hours, row.traded_hours], [3, 3]);
+      assert.deepEqual([BigInt(row.quote_volume), BigInt(row.base_volume)], [chaos, div]);
+      assert.equal(BigInt(row.rate_num!) * div, chaos * BigInt(row.rate_den!), 'rate is chaos per divine');
+      assert.equal(Number(row.quote_per_hour), Number(chaos) / 3);
+      assert.equal(row.activity_rank, null, '3 of 6 covered hours is below the coverage threshold');
+    }
+  });
+
+  it('ranks eligible markets when the window is covered', async () => {
+    await load();
+    await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
+    assert.equal((await metricsFor(DIVINE)).get(1)?.activity_rank, 1);
+    assert.equal((await metricsFor(CHROMATIC)).get(1)?.activity_rank, 2);
+
+    // The Mirror is absent at H0+2h while Mirage is present: covered, inactive, unranked.
+    const mirror = (await metricsFor(MIRROR)).get(1)!;
+    assert.deepEqual([mirror.covered_hours, mirror.traded_hours, mirror.activity_rank], [1, 0, null]);
+    const ranked = await pool.query('SELECT 1 FROM market_metrics WHERE window_hours = 1 AND activity_rank IS NOT NULL');
+    assert.equal(ranked.rowCount, 2, 'The Hunger trades under 100 chaos/hour; the Essence only has listings');
+  });
+
+  it('replaces the snapshot of the calculation version', async () => {
+    await load();
+    await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
+    await computeMetrics(pool);
+    const { rows } = await pool.query<{ as_of: string; calc_version: number }>(
+      'SELECT extract(epoch FROM as_of_hour)::bigint AS as_of, calc_version FROM metric_runs',
+    );
+    assert.deepEqual(rows, [{ as_of: String(H0 + 3 * HOUR), calc_version: CALC_VERSION }]);
+    assert.equal((await pool.query('SELECT 1 FROM market_metrics')).rowCount, CHAOS_MARKETS * 3);
+  });
+
+  it('uses parsed hours only', async () => {
+    await load();
+    // A newer fetched hour that has not been parsed yet does not move the windows.
+    await ingest(pool, new FakeExchange(5), { maxHours: 1, start: { kind: 'hour', cursor: H0 } });
+    assert.equal((await pool.query('SELECT 1 FROM raw_digests WHERE parser_version IS NULL')).rowCount, 1);
+    assert.equal((await computeMetrics(pool)).asOfHour, H0 + 3 * HOUR);
+  });
+
+  it('refuses to run concurrently', async () => {
+    await load();
+    await withMetricsLock(pool, async () => {
+      await assert.rejects(computeMetrics(pool), ConcurrentRunError);
+    });
+  });
+
+  it('categorizes items by their Metadata path', async () => {
+    await load();
+    const { rows } = await pool.query<{ category: string }>('SELECT category FROM items WHERE metadata_path = $1', [
+      CHAOS_PATH,
+    ]);
+    assert.equal(rows[0]?.category, 'Currency');
+  });
+});
