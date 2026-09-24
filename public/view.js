@@ -5,7 +5,8 @@
  * @typedef {{ num: string, den: string, value: number }} Rate
  * @typedef {{ name: string, path: string, category: string, named: boolean }} Item
  * @typedef {{
- *   id: string, item: Item, rank: number | null, eligible: boolean, window_hours: number, covered_hours: number,
+ *   id: string, item: Item, rank: number | null, score?: number | null, eligible: boolean, window_hours: number,
+ *   covered_hours: number,
  *   traded_hours: number, coverage: number, persistence: number, turnover_per_hour: number | null,
  *   units_per_hour: number | null, volume: { quote: string, base: string }, rate: Rate | null,
  *   low_rate: Rate | null, high_rate: Rate | null, volatility: number | null
@@ -80,6 +81,17 @@ export function differenceText(low, high) {
   return `${(1 / low.value - 1 / high.value).toFixed(1)} per c`;
 }
 
+/**
+ * The ranking score, (high − low) / low × Chaos per hour. Uses the API's value when present, otherwise computes it
+ * the same way (the history summary has no stored score).
+ * @param {Market} m
+ */
+export function scoreOf(m) {
+  if (m.score !== undefined) return m.score;
+  if (!m.low_rate || !m.high_rate || m.turnover_per_hour === null || !(m.low_rate.value > 0)) return null;
+  return ((m.high_rate.value - m.low_rate.value) / m.low_rate.value) * m.turnover_per_hour;
+}
+
 /** @param {number | null | undefined} share 0..1 */
 export function percentText(share) {
   if (share === null || share === undefined || !Number.isFinite(share)) return DASH;
@@ -117,6 +129,7 @@ export function marketRow(m) {
     low: rateText(m.low_rate),
     high: rateText(m.high_rate),
     range: differenceText(m.low_rate, m.high_rate),
+    score: compact(scoreOf(m)),
     turnover: m.turnover_per_hour === null ? DASH : `${compact(m.turnover_per_hour)}c/h`,
     units: m.units_per_hour === null ? DASH : `${compact(m.units_per_hour)}/h`,
     traded: `${m.traded_hours}/${m.covered_hours} h`,
@@ -174,7 +187,7 @@ export function statusCounts(statuses) {
 /**
  * @typedef {{
  *   league: string, window: '1h' | '6h' | '24h', scope: 'eligible' | 'all',
- *   sort: 'rank' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'low' | 'high' | 'range' | 'name',
+ *   sort: 'rank' | 'score' | 'turnover' | 'units' | 'persistence' | 'volatility' | 'low' | 'high' | 'range' | 'name',
  *   order: '' | 'asc' | 'desc',
  *   q: string, offset: number, market: string, history: '24h' | '7d' | '30d'
  * }} State
@@ -196,7 +209,7 @@ export const DEFAULT_STATE = Object.freeze({
 const CHOICES = /** @type {Record<string, readonly string[]>} */ ({
   window: ['1h', '6h', '24h'],
   scope: ['eligible', 'all'],
-  sort: ['rank', 'turnover', 'units', 'persistence', 'volatility', 'low', 'high', 'range', 'name'],
+  sort: ['rank', 'score', 'turnover', 'units', 'persistence', 'volatility', 'low', 'high', 'range', 'name'],
   order: ['', 'asc', 'desc'],
   history: ['24h', '7d', '30d'],
 });

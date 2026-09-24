@@ -87,6 +87,7 @@ describe('marketRow', () => {
       low: '300.0c',
       high: '345.0c',
       range: '45.0c',
+      score: '2M', // (345 − 300) / 300 × 13,437,690
       turnover: '13.4Mc/h',
       units: '40.9k/h',
       traded: '12/18 h',

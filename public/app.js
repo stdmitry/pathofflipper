@@ -4,7 +4,7 @@ import { drawHistory } from './chart.js';
 import * as view from './view.js';
 
 const PAGE_SIZE = 50;
-const COLUMNS = 10;
+const COLUMNS = 11;
 
 /** @param {string} id */
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -114,7 +114,8 @@ async function loadMarkets() {
     renderRows(body.data.map(view.marketRow));
     $('table-meta').textContent =
       `${state.window} window ending ${view.hourText(body.meta.as_of_hour)} · calculation v${body.meta.calc_version} · ` +
-      'ranked by Chaos traded per hour, among markets with ≥75% coverage, trades in ≥50% of hours and ≥100c/h';
+      'ranked by score = (High − Low) / Low × Chaos/h, among markets with ≥75% coverage, trades in ≥50% of hours ' +
+      'and ≥100c/h';
   } catch (error) {
     if (isAbort(error)) return;
     total = 0;
@@ -155,6 +156,7 @@ function renderRows(rows) {
         el('td', { class: 'num strong' }, r.low),
         el('td', { class: 'num strong' }, r.high),
         el('td', { class: 'num' }, r.range),
+        el('td', { class: 'num strong' }, r.score),
         el('td', { class: 'num' }, r.turnover),
         el('td', { class: 'num' }, r.units),
         el('td', { class: 'num' }, r.traded),
@@ -237,6 +239,7 @@ function renderDetail(history) {
     ['Low', row.low, 'Lowest price paid in a trade during this window'],
     ['High', row.high, 'Highest price paid in a trade during this window'],
     ['High − Low', row.range, 'Highest minus lowest price paid; not a spread you can capture'],
+    ['Score', row.score, '(High − Low) / Low × Chaos/h'],
     ['Chaos/h', row.turnover, 'Chaos traded per hour with data'],
     ['Units/h', row.units, `${item.name} traded per hour with data`],
     ['Traded', row.traded, 'Hours with trades / hours with data'],

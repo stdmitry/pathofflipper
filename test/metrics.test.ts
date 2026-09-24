@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { type MarketRecord, parseMarkets } from '../src/exchange/parse.ts';
 import {
-  activityRanks,
   basePerHour,
   coverage,
   ELIGIBILITY,
@@ -12,6 +11,8 @@ import {
   type MarketHour,
   persistence,
   quotePerHour,
+  rankMarkets,
+  rankScore,
   sourceAgeHours,
   windowMetrics,
 } from '../src/market/metrics.ts';
@@ -163,23 +164,49 @@ describe('isEligible', () => {
   });
 });
 
-describe('activityRanks', () => {
-  it('ranks eligible markets by chaos turnover, then persistence, then key; ineligible markets get none', () => {
+/** A traded hour with its own low and high Chaos price (per unit) around a volume of `quote` Chaos for `base` units. */
+function tradeRange(quote: number, base: number, low: number, high: number): MarketHour {
+  const hour = trade(quote, base);
+  return { ...hour, quoted: { ...hour.quoted!, lowRate: rational(BigInt(low), 1n), highRate: rational(BigInt(high), 1n) } };
+}
+
+describe('rankScore', () => {
+  it('is the relative range times Chaos per covered hour', () => {
+    // Low 300, high 330: a 10% range; 6,000 Chaos over 2 covered hours is 3,000 per hour.
+    const m = windowMetrics([tradeRange(3000, 10, 300, 330), tradeRange(3000, 10, 310, 320), status('missing')]);
+    assert.ok(Math.abs(rankScore(m)! - 0.1 * 3000) < 1e-9);
+  });
+
+  it('is 0 without a range and null without trades', () => {
+    assert.equal(rankScore(windowMetrics([trade(3000, 10)])), 0);
+    assert.equal(rankScore(windowMetrics([status('inactive')])), null);
+    assert.equal(rankScore(windowMetrics([status('missing')])), null);
+  });
+});
+
+describe('rankMarkets', () => {
+  it('ranks eligible markets by score, then turnover, then key; ineligible markets get none', () => {
     const market = (key: string, hours: MarketHour[]) => ({ key, sortKey: key, metrics: windowMetrics(hours) });
-    const ranks = activityRanks([
-      market('small', [trade(200, 1), trade(200, 1)]),
-      market('big', [trade(9000, 30), trade(9000, 30)]),
-      market('tie-b', [trade(500, 1), trade(500, 1)]),
-      market('tie-a', [trade(500, 1), trade(500, 1)]),
-      market('patchy', [trade(1000, 1), status('inactive')]),
+    const ranks = rankMarkets([
+      // 1,000 c/h with a 50% range: score 500.
+      market('wide', [tradeRange(1000, 5, 200, 300), tradeRange(1000, 5, 200, 300)]),
+      // 90,000 c/h with a 1% range: score 900, despite a much smaller range.
+      market('busy', [tradeRange(90000, 300, 300, 303), tradeRange(90000, 300, 300, 303)]),
+      // 500 c/h, no range: score 0, ties broken by turnover.
+      market('flat-big', [trade(500, 1), trade(500, 1)]),
+      market('flat-small', [trade(200, 1), trade(200, 1)]),
+      // Trades in exactly half its hours (still eligible): 1,000 c/h with a 900% range, score 9,000.
+      market('patchy', [tradeRange(2000, 1, 100, 1000), status('inactive')]),
+      // Too little turnover to be eligible, whatever its range.
+      market('thin', [tradeRange(50, 1, 10, 500), tradeRange(50, 1, 10, 500)]),
       market('dead', [status('listed'), status('listed')]),
     ]);
     assert.deepEqual([...ranks], [
-      ['big', 1],
-      ['tie-a', 2],
-      ['tie-b', 3],
-      ['patchy', 4],
-      ['small', 5],
+      ['patchy', 1],
+      ['busy', 2],
+      ['wide', 3],
+      ['flat-big', 4],
+      ['flat-small', 5],
     ]);
   });
 });

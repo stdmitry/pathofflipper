@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import pg from 'pg';
 import { encodeMarketId } from '../src/api/params.ts';
+import { CALC_VERSION } from '../src/market/metrics.ts';
 import { createApiServer } from '../src/api/server.ts';
 import { runMigrations } from '../src/db/migrate.ts';
 import { ingest } from '../src/ingest.ts';
@@ -93,7 +94,7 @@ describe('read API (PostgreSQL)', { skip }, () => {
       const { body } = await get('/api/leagues');
       assert.deepEqual(body.data, [{ name: 'Mirage', active: true, markets_24h: 5, eligible_markets_24h: 0 }]);
       assert.equal(body.meta.as_of_hour, new Date((H0 + 2 * HOUR) * 1000).toISOString());
-      assert.equal(body.meta.calc_version, 1);
+      assert.equal(body.meta.calc_version, CALC_VERSION);
     });
 
     it('lists eligible markets by rank with units, freshness and the activity label', async () => {
@@ -111,7 +112,11 @@ describe('read API (PostgreSQL)', { skip }, () => {
       assert.ok(divine.rate.value > 300 && divine.rate.value < 400, `chaos per divine, got ${divine.rate.value}`);
       assert.equal(typeof divine.volume.quote, 'string', 'integer totals are exact strings');
       assert.equal(body.meta.total, 2);
-      assert.match(body.meta.ranking, /not a profitability ranking/);
+      assert.match(body.meta.ranking, /not a validated profit estimate/);
+      // Rank 1 has the higher score: (high − low) / low × Chaos per hour.
+      assert.ok(body.data[0].score > body.data[1].score);
+      const d = body.data[0];
+      assert.ok(Math.abs(d.score - ((d.high_rate.value - d.low_rate.value) / d.low_rate.value) * d.turnover_per_hour) < 1e-6);
       assert.ok(body.meta.units.rate);
       // H0+2h ended at H0+3h; the clock is 2.5 hours later, within the 3-hour limit.
       assert.deepEqual([body.meta.source_age_hours, body.meta.stale], [2.5, false]);
