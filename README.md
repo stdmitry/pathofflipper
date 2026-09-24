@@ -44,9 +44,29 @@ Each run stores at most `--max-hours` completed hours (default 24, or `POE_MAX_H
 
 After the first stored hour, `--start` is ignored and runs continue from the cursor.
 
-**Resuming.** Every hour commits its raw response, market rows and the advanced cursor in one transaction. If a run is interrupted, whether by Ctrl+C, a crash or a database outage, the next run continues from the last committed PC hour. Cursors left by other realms in older databases are ignored and never changed. The first Ctrl+C finishes the current hour and exits; a second aborts immediately, and the uncommitted hour is rolled back. Only one fetch can run at a time.
+**Resuming.** Every hour commits its raw response, market rows and the advanced cursor in one transaction. If a run is interrupted, whether by Ctrl+C, a crash or a database outage, the next run continues from the last committed PC hour. Cursors left by other realms in older databases are ignored and never changed. The first Ctrl+C finishes the current hour and exits; a second aborts immediately, and the uncommitted hour is rolled back. Only one fetch or rebuild can run at a time.
 
-**Failure handling.** Timeouts (30 s), network errors, HTTP 429 and 5xx are retried up to 5 attempts with exponential backoff, honoring `Retry-After` and the API's rate-limit headers. A response that fails validation is saved to `rejected_responses`, the cursor stays on that hour, and the run exits with 1. Requests identify the app through `User-Agent: pathofflipper/<version> (contact: $POE_USER_AGENT_CONTACT)`.
+**Failure handling.** Timeouts (30 s), network errors, HTTP 429 and 5xx are retried up to 5 attempts with exponential backoff, honoring `Retry-After` and the API's rate-limit headers. A response that fails validation is saved to `rejected_responses`, the cursor stays on that hour, and the run exits with 1. Validation requires every numeric value to be an integer within ±2^53, `market_id` to equal `item_a|item_b`, and a pair never to appear in the reverse order of an already stored pair. Requests identify the app through `User-Agent: pathofflipper/<version> (contact: $POE_USER_AGENT_CONTACT)`.
+
+## Storage
+
+Each hour is stored twice: `raw_digests` keeps the response verbatim (permanently, as the only lossless copy), and `pair_hours` holds its values as integers.
+
+- `leagues`, `items` and `pairs` are dictionaries with integer ids. A pair is two items in upstream `market_pair` order, shared by all leagues. Order `a`/`b` doesn't imply a buy or sell side.
+- `pair_hours` has one row per league, pair and hour, with `volume_traded`, `lowest_stock`, `highest_stock`, `lowest_ratio` and `highest_ratio` for each side as `bigint` (`volume_traded_a`, `volume_traded_b`, …). Its only index is the primary key `(league_id, pair_id, source_hour)`, so reading one pair's history in a league is fast; whole-league scans are not indexed yet.
+- Markets with zero traded volume are kept: they show listings existed without trades. An hour with no `raw_digests` row is unknown, not inactive.
+- `items.display_name` comes from [`data/item-names.json`](./data/item-names.json), a trimmed snapshot of RePoE's [`base_items.json`](https://repoe-fork.github.io/base_items.json). New items are named when first stored. Paths missing from the snapshot keep `display_name` NULL; show the path instead. Names are not unique (two items are called "Delirium Orb"). Refresh once per league with `npm run item-names -- --download`, review the diff, and commit it.
+
+### Upgrading a database from the jsonb `market_hours` table ([#13](https://github.com/stdmitry/pathofflipper/issues/13))
+
+```sh
+# stop any running fetch first
+npm run db:migrate   # applies 0002, then 0003 refuses to drop market_hours: "N stored hours are not fully rebuilt"
+npm run rebuild      # re-parses every raw digest into pair_hours; resumable, compares with market_hours
+npm run db:migrate   # 0003 now drops market_hours
+```
+
+Fetching can resume once 0002 is applied; it writes only the new tables, and `rebuild` skips hours that are already complete. `rebuild` exits with 1 if a stored digest fails validation or any `market_hours` row differs from `pair_hours`; 0003 stays blocked until every digest's market count matches its `pair_hours` rows. Dropping the table frees its disk space immediately. Payloads stored before 0002 stay `pglz`-compressed; new ones use `lz4`.
 
 ## Inspecting data
 
@@ -61,22 +81,31 @@ FROM ingestion_cursors;
 SELECT source_hour, market_count, first_fetched_at, checksum FROM raw_digests ORDER BY source_hour DESC LIMIT 10;
 
 -- Markets per league in the latest stored hour
-SELECT league, count(*) FROM market_hours
-WHERE source_hour = (SELECT max(source_hour) FROM market_hours)
-GROUP BY league ORDER BY 2 DESC;
+SELECT l.name, count(*) FROM pair_hours h JOIN leagues l ON l.id = h.league_id
+WHERE h.source_hour = (SELECT max(source_hour) FROM raw_digests)
+GROUP BY l.name ORDER BY 2 DESC;
 
--- Most traded markets in that hour; numeric fields are exact jsonb values keyed by item id
-SELECT league, market_id, volume_traded, lowest_ratio, highest_ratio
-FROM market_hours
-WHERE source_hour = (SELECT max(source_hour) FROM market_hours)
-ORDER BY (volume_traded->>item_a_id)::numeric DESC
-LIMIT 10;
+-- One pair's history in a league (uses the primary key)
+SELECT h.source_hour, h.volume_traded_a, h.volume_traded_b, h.lowest_ratio_a, h.lowest_ratio_b, h.highest_ratio_a, h.highest_ratio_b
+FROM pair_hours h
+JOIN leagues l ON l.id = h.league_id
+JOIN pairs p ON p.id = h.pair_id
+JOIN items a ON a.id = p.item_a_id
+JOIN items b ON b.id = p.item_b_id
+WHERE l.realm = 'pc' AND l.name = 'Mercenaries'
+  AND a.metadata_path = 'Metadata/Items/Currency/CurrencyRerollRare'
+  AND b.metadata_path = 'Metadata/Items/Currency/CurrencyModValues'
+ORDER BY h.source_hour DESC LIMIT 24;
+
+-- Pairs with readable names
+SELECT p.id, coalesce(a.display_name, a.metadata_path) AS item_a, coalesce(b.display_name, b.metadata_path) AS item_b
+FROM pairs p JOIN items a ON a.id = p.item_a_id JOIN items b ON b.id = p.item_b_id LIMIT 20;
 
 -- Responses rejected by validation
 SELECT id, to_timestamp(request_cursor) AS hour, problems, fetched_at FROM rejected_responses;
 ```
 
-`source_hour` is the hour the data describes, and `fetched_at` is when we retrieved it. `item_a_id` and `item_b_id` follow the upstream `market_pair` order and don't imply a buy or sell side. Pricing semantics are still open; see [API observations](./specs/exchange-api-observations.md).
+`source_hour` is the hour the data describes; the matching `raw_digests` row says when we fetched it. Pricing semantics are still open; see [API observations](./specs/exchange-api-observations.md).
 
 ## Tests
 

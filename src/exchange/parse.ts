@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { HOUR_SECONDS, hourIso, isHourCursor } from './hours.ts';
 
 /** Bump when validation or normalization rules change; stored on every raw digest. */
-export const PARSER_VERSION = 1;
+export const PARSER_VERSION = 2;
 
 export const NUMERIC_FIELDS = [
   'volume_traded',
@@ -11,6 +11,17 @@ export const NUMERIC_FIELDS = [
   'lowest_ratio',
   'highest_ratio',
 ] as const;
+
+export type NumericField = (typeof NUMERIC_FIELDS)[number];
+
+/** One validated market; values are stored as bigint, so they must be exact integers. */
+export interface MarketRecord {
+  league: string;
+  /** market_pair in upstream order. No buy/sell meaning is implied. */
+  pair: [string, string];
+  /** For each field, the values keyed by pair[0] and pair[1]. */
+  values: Record<NumericField, [number, number]>;
+}
 
 const MAX_PROBLEMS = 20;
 
@@ -43,6 +54,7 @@ export type Interpretation =
       activeMarketCount: number;
       /** Hours between the requested cursor and the next one that the API skipped over. */
       skippedHours: number;
+      markets: MarketRecord[];
     }
   | { kind: 'caught-up'; nextCursor: number };
 
@@ -114,10 +126,12 @@ export function interpretResponse(status: number, body: string, requestCursor: n
 
   const problems: string[] = [];
   const seen = new Set<string>();
-  let activeMarketCount = 0;
+  const pairs = new Set<string>();
+  const records: MarketRecord[] = [];
   markets.forEach((market, index) => {
     if (problems.length >= MAX_PROBLEMS) return;
-    if (validateMarket(market, `markets[${index}]`, seen, problems)) activeMarketCount++;
+    const record = validateMarket(market, `markets[${index}]`, seen, pairs, problems);
+    if (record) records.push(record);
   });
   if (problems.length > 0) throw new MalformedResponseError(`Invalid market records`, problems);
 
@@ -127,48 +141,62 @@ export function interpretResponse(status: number, body: string, requestCursor: n
     sourceHour,
     nextCursor: next,
     marketCount: markets.length,
-    activeMarketCount,
+    activeMarketCount: records.filter((record) => record.values.volume_traded.some((value) => value !== 0)).length,
     skippedHours: (next - sourceHour) / HOUR_SECONDS - 1,
+    markets: records,
   };
 }
 
-/** Records structural problems and returns whether the market had nonzero traded volume. */
-function validateMarket(market: unknown, where: string, seen: Set<string>, problems: string[]): boolean {
+/** Records structural problems and returns the market when it is valid. */
+function validateMarket(
+  market: unknown,
+  where: string,
+  seen: Set<string>,
+  pairs: Set<string>,
+  problems: string[],
+): MarketRecord | undefined {
   if (!isObject(market)) {
     problems.push(`${where} is not an object`);
-    return false;
+    return undefined;
   }
   const { league, market_id: marketId, market_pair: pair } = market;
+  const before = problems.length;
   if (!isNonEmptyString(league)) problems.push(`${where}.league must be a non-empty string`);
   if (!isNonEmptyString(marketId)) problems.push(`${where}.market_id must be a non-empty string`);
   if (!Array.isArray(pair) || pair.length !== 2 || !pair.every(isNonEmptyString) || pair[0] === pair[1]) {
     problems.push(`${where}.market_pair must be two different item ids`);
-    return false;
+    return undefined;
   }
+  const [a, b] = pair as [string, string];
+  // market_id is not stored; it is always rebuilt as item_a|item_b.
+  if (isNonEmptyString(marketId) && marketId !== `${a}|${b}`) problems.push(`${where}.market_id must be "${a}|${b}", got ${JSON.stringify(marketId)}`);
 
   const key = JSON.stringify([league, marketId]);
   if (seen.has(key)) problems.push(`${where} duplicates league ${String(league)} market ${String(marketId)}`);
   seen.add(key);
+  // A pair is shared by all leagues and keeps one orientation, so the reverse order may never appear.
+  if (pairs.has(JSON.stringify([b, a]))) problems.push(`${where}.market_pair ${a}|${b} also appears in the reverse order`);
+  pairs.add(JSON.stringify([a, b]));
 
-  let active = false;
+  const values = {} as Record<NumericField, [number, number]>;
   for (const field of NUMERIC_FIELDS) {
-    const values = market[field];
-    if (!isObject(values)) {
+    const map = market[field];
+    if (!isObject(map)) {
       problems.push(`${where}.${field} must be an object`);
       continue;
     }
-    if (Object.keys(values).length !== 2 || !pair.every((item) => Object.hasOwn(values, item))) {
+    if (Object.keys(map).length !== 2 || !Object.hasOwn(map, a) || !Object.hasOwn(map, b)) {
       problems.push(`${where}.${field} must have exactly the market_pair item ids as keys`);
       continue;
     }
-    for (const item of pair) {
-      const value = values[item];
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        problems.push(`${where}.${field}[${item}] must be a number, got ${JSON.stringify(value)}`);
-      } else if (field === 'volume_traded' && value !== 0) {
-        active = true;
+    for (const item of [a, b]) {
+      // Safe integers survive JSON.parse exactly and fit bigint; fractions or larger values need a schema change.
+      if (!Number.isSafeInteger(map[item])) {
+        problems.push(`${where}.${field}[${item}] must be an integer within ±2^53, got ${JSON.stringify(map[item])}`);
       }
     }
+    values[field] = [map[a] as number, map[b] as number];
   }
-  return active;
+  if (problems.length > before) return undefined;
+  return { league: league as string, pair: [a, b], values };
 }
