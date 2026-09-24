@@ -34,7 +34,7 @@ npm run fetch -- --max-hours 3         # smaller batch
 npm run fetch -- --help
 npm run parse                          # parse every fetched hour not parsed yet into pair_hours
 npm run metrics                        # recompute Chaos market metrics as of the newest parsed hour
-npm run serve                          # read API on http://127.0.0.1:8080 (see Read API)
+npm run serve                          # dashboard and read API on http://127.0.0.1:8080
 ```
 
 Fetch stores only raw responses, so run `npm run parse` and then `npm run metrics` afterwards, for example `npm run fetch; npm run parse; npm run metrics` in a schedule, with `npm run serve` running alongside. Use `;` rather than `&&` so that hours fetched before a failure still get parsed and counted.
@@ -84,6 +84,17 @@ JOIN items i ON i.id = CASE WHEN p.item_a_id = r.quote_item_id THEN p.item_b_id 
 WHERE l.name = 'Mirage' AND m.window_hours = 24 AND m.activity_rank IS NOT NULL
 ORDER BY m.activity_rank LIMIT 20;
 ```
+
+## Dashboard
+
+`npm run serve` also serves the dashboard at <http://127.0.0.1:8080/>. It is plain HTML and browser JavaScript in [`public/`](./public), with no build step. It reads only the API described below.
+
+- **Market table:** pick a league, window (1h, 6h, 24h) and search text. Sort by any column header, page through 50 at a time, and optionally include ineligible markets. The page state lives in the address bar, so a view can be bookmarked or shared.
+- **Market detail:** click an item to see its summary, a chart of the hourly rate, the traded low–high band and Chaos traded, and a strip showing each hour's status. Hours without trades break the line; hours without data are hatched. History covers 24h, 7d or 30d.
+- **States:** the header pill shows data age (green for fresh, amber for stale or degraded, red when there's no data), with the problems from `/api/status` listed underneath. Tables show loading, empty (with a hint to include ineligible markets) and error (with retry) states.
+- **Labels:** the page says throughout that it shows historical screening, not live quotes or profit forecasts. There are no budget inputs.
+
+Charts use [uPlot](https://github.com/leeoniya/uPlot) 1.6.32 (MIT), vendored in `public/vendor/uplot-1.6.32/` from the npm tarball (`sha512-KIMVnG68…`). To update it, unpack the new `npm pack uplot@<version>` into a new versioned directory and change the two paths in `index.html`. The versioned path lets browsers cache the old copy indefinitely. `npm run typecheck` also checks the browser code (JSDoc types, `public/tsconfig.json`).
 
 ## Read API
 

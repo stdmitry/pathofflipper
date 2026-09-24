@@ -238,7 +238,7 @@ describe('read API (PostgreSQL)', { skip }, () => {
 
     it('answers 404 for unknown paths and 405 for other methods', async () => {
       assert.equal((await get('/api/nothing')).status, 404);
-      assert.equal((await get('/')).status, 404);
+      assert.equal((await fetch(`${base}/`)).status, 200, '/ is the dashboard');
       const post = await get('/api/status', { method: 'POST' });
       assert.equal(post.status, 405);
       assert.equal(post.headers.get('allow'), 'GET, HEAD');

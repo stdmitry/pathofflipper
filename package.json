@@ -20,7 +20,7 @@
     "metrics": "node --env-file-if-exists=.env src/cli/metrics.ts",
     "serve": "node --env-file-if-exists=.env src/cli/serve.ts",
     "test": "node --env-file-if-exists=.env --test --test-concurrency=1 \"test/**/*.test.ts\"",
-    "typecheck": "tsc"
+    "typecheck": "tsc && tsc -p public"
   },
   "dependencies": {
     "pg": "^8.23.0"

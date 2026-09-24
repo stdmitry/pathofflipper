@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import http from 'node:http';
+import path from 'node:path';
 import type pg from 'pg';
 import { errorMessage, silentLogger, type Logger } from '../log.ts';
 import {
@@ -20,7 +22,27 @@ export interface ApiOptions {
   cacheEntries?: number;
 }
 
+/** The dashboard's static files. */
+export const PUBLIC_DIR = path.join(import.meta.dirname, '..', '..', 'public');
+
+const STATIC_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+};
+
+// The dashboard loads only its own files and talks only to this API.
+const PAGE_SECURITY = {
+  'Content-Security-Policy':
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+};
+
 type Handler = (url: URL, now: Date) => Promise<unknown>;
+
+type Reply = { status: number; body: string | Buffer; headers: Record<string, string> };
 
 interface Route {
   pattern: RegExp;
@@ -69,13 +91,16 @@ export function createApiServer(pool: pg.Pool, options: ApiOptions = {}): http.S
     { pattern: /^\/api\/status$/, cached: false, handler: () => (url, at) => (parseStatusParams(url.searchParams), collectorStatus(pool, at)) },
   ];
 
-  async function respond(req: http.IncomingMessage): Promise<{ status: number; body: string; headers: Record<string, string> }> {
+  async function respond(req: http.IncomingMessage): Promise<Reply> {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       throw new HttpError(405, 'method_not_allowed', 'Only GET and HEAD are supported', {});
     }
     const url = new URL(req.url ?? '/', 'http://localhost');
     const route = routes.map((r) => ({ r, match: url.pathname.match(r.pattern) })).find((x) => x.match);
-    if (!route) throw new HttpError(404, 'not_found', `No endpoint ${url.pathname}`);
+    if (!route) {
+      if (url.pathname.startsWith('/api/')) throw new HttpError(404, 'not_found', `No endpoint ${url.pathname}`);
+      return serveStatic(url.pathname);
+    }
     const handler = route.r.handler(route.match!);
     const at = now();
 
@@ -117,12 +142,41 @@ export function createApiServer(pool: pg.Pool, options: ApiOptions = {}): http.S
       .then(({ status, body, headers }) => {
         res.writeHead(status, {
           ...headers,
-          ...(status === 304 ? {} : { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body) }),
+          ...(status === 304
+            ? {}
+            : { 'Content-Type': 'application/json; charset=utf-8', ...headers, 'Content-Length': String(Buffer.byteLength(body)) }),
         });
         res.end(req.method === 'HEAD' || status === 304 ? undefined : body);
         logger.info('request', { method: req.method, url: req.url, status, ms: Date.now() - started });
       });
   });
+}
+
+/**
+ * Serves a file below PUBLIC_DIR: `/` is the dashboard, other paths map to files with a known type. Anything that
+ * resolves outside the directory, or has another type, is not found.
+ */
+async function serveStatic(pathname: string): Promise<Reply> {
+  let relative: string;
+  try {
+    relative = decodeURIComponent(pathname === '/' ? '/index.html' : pathname);
+  } catch {
+    throw new HttpError(404, 'not_found', 'Not found');
+  }
+  const file = path.resolve(PUBLIC_DIR, `.${relative}`);
+  const type = STATIC_TYPES[path.extname(file)];
+  if (!type || !file.startsWith(PUBLIC_DIR + path.sep) || relative.includes('\0')) {
+    throw new HttpError(404, 'not_found', 'Not found');
+  }
+  let body: Buffer;
+  try {
+    body = await readFile(file);
+  } catch {
+    throw new HttpError(404, 'not_found', 'Not found');
+  }
+  // Vendored libraries live in versioned directories and never change; the app's own files are revalidated.
+  const cache = relative.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+  return { status: 200, body, headers: { 'Content-Type': type, 'Cache-Control': cache, ...PAGE_SECURITY } };
 }
 
 function toHttpError(error: unknown): HttpError {

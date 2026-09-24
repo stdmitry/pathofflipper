@@ -1,0 +1,17 @@
+{
+  // Type-checks the dashboard's browser modules (plain JS with JSDoc types); nothing is emitted.
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "noEmit": true,
+    "allowUmdGlobalAccess": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["*.js", "vendor/uplot-1.6.32/uPlot.d.ts"]
+}
