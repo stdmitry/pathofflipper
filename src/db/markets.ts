@@ -4,8 +4,16 @@ import type { ItemNames } from '../items.ts';
 
 const VALUE_COLUMNS = NUMERIC_FIELDS.flatMap((field) => [`${field}_a`, `${field}_b`]);
 
+export interface StoreOptions {
+  /**
+   * Also count the hour's markets per league in league_hours (default true). The pre-0003 rebuild runs before
+   * migration 0006 creates that table, and 0006 fills it from pair_hours, so rebuild turns this off.
+   */
+  leagueHours?: boolean;
+}
+
 /**
- * Stores one hour's markets in pair_hours, adding unknown leagues, items and pairs first. Runs inside the caller's
+ * Stores one hour's markets in pair_hours and league_hours, adding unknown leagues, items and pairs first. Runs inside the caller's
  * transaction. Rows already stored for the hour are kept. Returns the number of rows inserted.
  *
  * Throws MalformedResponseError when a market_pair was stored before in the reverse order.
@@ -16,6 +24,7 @@ export async function storeMarkets(
   sourceHour: number,
   markets: readonly MarketRecord[],
   itemNames: ItemNames,
+  options: StoreOptions = {},
 ): Promise<number> {
   if (markets.length === 0) return 0;
 
@@ -85,6 +94,20 @@ export async function storeMarkets(
      FROM unnest($2::int[], $3::int[], ${valueParams}) AS u (league_id, pair_id, ${VALUE_COLUMNS.join(', ')})
      ON CONFLICT (league_id, pair_id, source_hour) DO NOTHING`,
     [sourceHour, ...columns],
+  );
+
+  if (options.leagueHours === false) return result.rowCount ?? 0;
+  // The parser rejects duplicate league markets, so each league's market count is its number of pair_hours rows.
+  const perLeague = new Map<number, number>();
+  for (const market of markets) {
+    const id = leagueIds.get(market.league)!;
+    perLeague.set(id, (perLeague.get(id) ?? 0) + 1);
+  }
+  await client.query(
+    `INSERT INTO league_hours (league_id, source_hour, markets)
+     SELECT u.league_id, to_timestamp($1), u.markets FROM unnest($2::int[], $3::int[]) AS u (league_id, markets)
+     ON CONFLICT (league_id, source_hour) DO NOTHING`,
+    [sourceHour, [...perLeague.keys()], [...perLeague.values()]],
   );
   return result.rowCount ?? 0;
 }

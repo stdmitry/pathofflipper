@@ -75,6 +75,11 @@ describe('parsePending (PostgreSQL)', { skip }, () => {
     assert.equal(await count('leagues'), FIXTURE.leagues);
     assert.equal(await count('items'), FIXTURE.items);
     assert.equal(await count('pairs'), FIXTURE.pairs);
+    // One league_hours row per league and hour, counting that league's markets.
+    const leagueHours = await pool.query<{ rows: string; markets: string }>(
+      'SELECT count(*) AS rows, sum(markets) AS markets FROM league_hours',
+    );
+    assert.deepEqual(leagueHours.rows[0], { rows: String(2 * FIXTURE.leagues), markets: String(2 * FIXTURE_MARKETS) });
     assert.deepEqual(await digestStates(), [
       { source_hour: String(H0), parser_version: PARSER_VERSION, parse_error: null },
       { source_hour: String(H0 + HOUR), parser_version: PARSER_VERSION, parse_error: null },

@@ -68,7 +68,8 @@ export async function rebuild(pool: pg.Pool, options: RebuildOptions): Promise<R
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const { inserted } = await parseStoredDigest(client, digest.id, sourceHour, options.itemNames);
+        // Rebuild predates league_hours (migration 0006), which fills itself from pair_hours when it is applied.
+        const { inserted } = await parseStoredDigest(client, digest.id, sourceHour, options.itemNames, { leagueHours: false });
         await client.query('UPDATE raw_digests SET parser_version = $1 WHERE id = $2', [PARSER_VERSION, digest.id]);
         await client.query('COMMIT');
 

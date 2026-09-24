@@ -164,7 +164,10 @@ describe('rebuild and the market_hours drop (PostgreSQL)', { skip }, () => {
       '0003_drop_market_hours.sql',
       '0004_separate_parsing.sql',
       '0005_market_metrics.sql',
+      '0006_league_hours.sql',
     ]);
+    // 0006 fills league_hours from the rebuilt pair_hours.
+    assert.equal(await count('league_hours'), 2 * FIXTURE.leagues);
     const { rows } = await pool.query(`SELECT to_regclass('market_hours') AS t`);
     assert.equal(rows[0]?.t, null);
     // Rebuilt digests count as parsed, so the parse stage has nothing left to do.

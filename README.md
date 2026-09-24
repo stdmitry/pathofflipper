@@ -34,9 +34,10 @@ npm run fetch -- --max-hours 3         # smaller batch
 npm run fetch -- --help
 npm run parse                          # parse every fetched hour not parsed yet into pair_hours
 npm run metrics                        # recompute Chaos market metrics as of the newest parsed hour
+npm run serve                          # read API on http://127.0.0.1:8080 (see Read API)
 ```
 
-Fetch stores only raw responses, so run `npm run parse` and then `npm run metrics` afterwards, for example `npm run fetch; npm run parse; npm run metrics` in a schedule. Use `;` rather than `&&` so that hours fetched before a failure still get parsed and counted.
+Fetch stores only raw responses, so run `npm run parse` and then `npm run metrics` afterwards, for example `npm run fetch; npm run parse; npm run metrics` in a schedule, with `npm run serve` running alongside. Use `;` rather than `&&` so that hours fetched before a failure still get parsed and counted.
 
 Every run, manual or scheduled, fetches PoE 1 PC only. `--realm` and `POE_REALM` accept only `pc`; any other value, such as `xbox` or `sony`, exits with 2 before connecting to the database or the API.
 
@@ -84,12 +85,30 @@ WHERE l.name = 'Mirage' AND m.window_hours = 24 AND m.activity_rank IS NOT NULL
 ORDER BY m.activity_rank LIMIT 20;
 ```
 
+## Read API
+
+`npm run serve` serves stored data over HTTP (`--port`/`API_PORT`, default 8080; `--host`/`API_HOST`, default `127.0.0.1`). It only reads PostgreSQL and never calls the exchange, so traffic to it cannot reach upstream. All endpoints are `GET` (or `HEAD`), take `realm=pc` optionally, and answer JSON as `{ "data": ..., "meta": ... }`.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/leagues` | Leagues in the current metrics snapshot: `active` (present in the newest hour), market and eligible-market counts for 24h. |
+| `GET /api/markets?league=<name>` | Chaos markets of a league with their metrics. `window=1h\|6h\|24h` (24h), `scope=eligible\|all` (eligible), `sort=rank\|turnover\|units\|persistence\|volatility\|rate\|name` (rank), `order=asc\|desc`, `q=<text>` (name or path), `limit` 1–100 (50), `offset` 0–10,000. `meta.total` counts all matches. |
+| `GET /api/markets/<id>/history?league=<name>` | One point per hour, ending at the newest parsed hour, plus a summary over the window. `window=24h\|7d\|30d` (24h). Every hour has a `status`: `missing`, `exchange-down`, `league-absent` (all three unknown), `inactive`, `listed` or `traded`. Gaps are never left out or zero-filled. |
+| `GET /api/status` | `state` (`ok` or `degraded`) with the `problems` behind it: `no_data`, `stale_source`, `last_fetch_failed`, `parse_failures`, `rejected_responses`, `metrics_behind`, `gaps_last_24h`. Also cursor, newest fetched and parsed hours, pending and failed parses, and the metrics snapshot. |
+
+- **Market ids** in paths are opaque. Take them from `/api/markets`; they stay the same across database rebuilds.
+- **Units** are listed in `meta.units`. Rates are `{num, den, value}`: exact fraction strings plus a decimal for display. Integer totals are strings, so they stay exact beyond 2^53.
+- **Freshness**: every response carries `as_of_hour`, `source_age_hours` and `stale` (older than 3 hours). Stale data is still served, so clients can keep showing it with its age during an outage. Market responses also carry `calc_version`, `computed_at` and the reminder that the ranking measures activity, not profitability.
+- **Errors** are `{ "error": { "code", "message" } }`: `400 invalid_parameter` (with `parameter`; unknown, repeated or out-of-range parameters are all rejected), `404 not_found`, `405` for other methods, `503 unavailable` when the database is down, and `500 internal`.
+- **Caching**: responses other than `/api/status` are cached in memory under a version that changes when a parse or metrics run commits, so new data shows up on the next request. They carry an `ETag` and answer `If-None-Match` with `304`.
+
 ## Storage
 
 Each hour is stored twice: `raw_digests` keeps the response verbatim (permanently, as the only lossless copy), and `pair_hours` holds its values as integers.
 
 - `leagues`, `items` and `pairs` are dictionaries with integer ids. A pair is two items in upstream `market_pair` order, shared by all leagues. Order `a`/`b` doesn't imply a buy or sell side.
-- `pair_hours` has one row per league, pair and hour, with `volume_traded`, `lowest_stock`, `highest_stock`, `lowest_ratio` and `highest_ratio` for each side as `bigint` (`volume_traded_a`, `volume_traded_b`, …). Its only index is the primary key `(league_id, pair_id, source_hour)`, so reading one pair's history in a league is fast; whole-league scans are not indexed yet.
+- `pair_hours` has one row per league, pair and hour, with `volume_traded`, `lowest_stock`, `highest_stock`, `lowest_ratio` and `highest_ratio` for each side as `bigint` (`volume_traded_a`, `volume_traded_b`, …). The primary key `(league_id, pair_id, source_hour)` makes one pair's history in a league fast. A BRIN index on `source_hour` (about 100 kB) lets reads of recent hours across all pairs skip older rows.
+- `league_hours` counts each league's markets per parsed hour. Parse fills it, and it tells a market that is inactive in a running league from a league that isn't running.
 - Markets with zero traded volume are kept: they show listings existed without trades. An hour with no `raw_digests` row is unknown, not inactive. A fetched hour has no `pair_hours` rows until it is parsed, so check `raw_digests.parser_version` before reading a missing hour as empty.
 - `items.display_name` comes from [`data/item-names.json`](./data/item-names.json), a trimmed snapshot of RePoE's [`base_items.json`](https://repoe-fork.github.io/base_items.json). New items are named when first stored. Paths missing from the snapshot keep `display_name` NULL; show the path instead. Names are not unique (two items are called "Delirium Orb"). Refresh once per league with `npm run item-names -- --download`, review the diff, and commit it.
 

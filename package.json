@@ -18,6 +18,7 @@
     "item-names": "node --env-file-if-exists=.env src/cli/item-names.ts",
     "check-semantics": "node --env-file-if-exists=.env src/cli/check-semantics.ts",
     "metrics": "node --env-file-if-exists=.env src/cli/metrics.ts",
+    "serve": "node --env-file-if-exists=.env src/cli/serve.ts",
     "test": "node --env-file-if-exists=.env --test --test-concurrency=1 \"test/**/*.test.ts\"",
     "typecheck": "tsc"
   },
