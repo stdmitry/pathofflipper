@@ -24,7 +24,8 @@ The collector requests PoE 1 PC only ([#11](https://github.com/stdmitry/pathoffl
 
 - Top level: `next_change_id` (number) and `markets` (array).
 - Each market: `league`, `market_id` (`"<item a>|<item b>"`), `market_pair` (two item ids), and five maps keyed by the two item ids: `volume_traded`, `lowest_stock`, `highest_stock`, `lowest_ratio`, `highest_ratio`.
-- All numeric values observed so far are integers, including ratios. The largest volume seen was 83,648,916. They are stored as exact `jsonb` numerics in case fractional or larger values appear.
+- All numeric values observed so far are integers, including ratios. The largest value seen was 192,354,066. Since [#13](https://github.com/stdmitry/pathofflipper/issues/13) they are stored as `bigint` in `pair_hours`; a response with a fraction or a value beyond ±2^53 is rejected, and `raw_digests` keeps the exact original.
+- `market_id` always equals `market_pair[0]|market_pair[1]`, and no pair has appeared in both orders across all 9,344 stored hours (2024-07-26 to 2026-09-23). The collector relies on both and rejects a response that breaks either.
 - A recent PC hour held about 1,300–1,600 markets across 8 leagues, with about 75% showing nonzero traded volume. The earliest retained hour held 109 markets, of which 14 were active; the next hour, used as the fixture, holds 232.
 - No duplicate `(league, market_id)` pairs were observed within a response. The collector rejects a response containing them rather than silently dropping rows.
 - Response sizes: about 190 KB for 232 markets and about 1.1 MB for about 1,300 markets. Stored `jsonb` digests take about 130–145 KB each after PostgreSQL compression.

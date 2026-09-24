@@ -1,26 +1,23 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import pg from 'pg';
 import type { ExchangeResponse, ExchangeSource } from '../src/exchange/client.ts';
 import { runMigrations } from '../src/db/migrate.ts';
 import { MalformedResponseError } from '../src/exchange/parse.ts';
 import { ingest, readCursor, type IngestOptions } from '../src/ingest.ts';
+import {
+  count as countRows,
+  FIXTURE,
+  H0,
+  HOUR,
+  hourBody,
+  marketJson,
+  resetSchema,
+  skipWithoutDatabase as skip,
+  TEST_DATABASE_URL,
+} from './support.ts';
 
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
-const skip = TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not set (see README: Tests)';
-
-const H0 = 1722027600;
-const HOUR = 3600;
-const FIXTURE_MARKETS = 232;
-const fixtureBody = readFileSync(new URL('./fixtures/pc-1722027600.json', import.meta.url), 'utf8');
-
-/** The fixture re-labelled as the response for `cursor`, optionally with raw market JSON prepended. */
-function hourBody(cursor: number, extraMarketJson?: string): string {
-  let body = fixtureBody.replace(/"next_change_id":\d+/, `"next_change_id":${cursor + HOUR}`);
-  if (extraMarketJson) body = body.replace('"markets":[', `"markets":[${extraMarketJson},`);
-  return body;
-}
+const FIXTURE_MARKETS = FIXTURE.markets;
 
 /** Serves `hours` published hours starting at H0; later cursors answer like the unpublished current hour. */
 class FakeExchange implements ExchangeSource {
@@ -48,8 +45,7 @@ class FakeExchange implements ExchangeSource {
 describe('ingest (PostgreSQL)', { skip }, () => {
   let pool: pg.Pool;
 
-  const count = async (table: string) =>
-    Number((await pool.query<{ n: string }>(`SELECT count(*) AS n FROM ${table}`)).rows[0]?.n);
+  const count = (table: string) => countRows(pool, table);
 
   const options = (overrides: Partial<IngestOptions> = {}): IngestOptions => ({
     maxHours: 10,
@@ -59,6 +55,7 @@ describe('ingest (PostgreSQL)', { skip }, () => {
 
   before(async () => {
     pool = new pg.Pool({ connectionString: TEST_DATABASE_URL });
+    await resetSchema(pool);
     await runMigrations(pool);
   });
 
@@ -67,10 +64,12 @@ describe('ingest (PostgreSQL)', { skip }, () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE market_hours, raw_digests, ingestion_cursors, rejected_responses RESTART IDENTITY');
+    await pool.query(
+      'TRUNCATE pair_hours, pairs, items, leagues, raw_digests, ingestion_cursors, rejected_responses RESTART IDENTITY',
+    );
   });
 
-  it('stores a bounded batch with raw digests, market rows and the cursor', async () => {
+  it('stores a bounded batch with raw digests, dictionaries, pair_hours rows and the cursor', async () => {
     const exchange = new FakeExchange(5);
     const summary = await ingest(pool, exchange, options({ maxHours: 2 }));
 
@@ -80,20 +79,57 @@ describe('ingest (PostgreSQL)', { skip }, () => {
     assert.deepEqual(exchange.requested, [H0, H0 + HOUR]);
     assert.equal(await readCursor(pool), H0 + 2 * HOUR);
     assert.equal(await count('raw_digests'), 2);
-    assert.equal(await count('market_hours'), 2 * FIXTURE_MARKETS);
+    assert.equal(await count('pair_hours'), 2 * FIXTURE_MARKETS);
+    assert.equal(await count('leagues'), FIXTURE.leagues);
+    assert.equal(await count('items'), FIXTURE.items);
+    assert.equal(await count('pairs'), FIXTURE.pairs);
 
     const { rows } = await pool.query(
-      `SELECT DISTINCT realm, extract(epoch FROM source_hour)::bigint AS source_hour, fetched_at > source_hour + interval '1 hour' AS fetched_later
-       FROM market_hours ORDER BY 2`,
+      `SELECT DISTINCT l.realm, extract(epoch FROM h.source_hour)::bigint AS source_hour
+       FROM pair_hours h JOIN leagues l ON l.id = h.league_id ORDER BY 2`,
     );
     assert.deepEqual(rows, [
-      { realm: 'pc', source_hour: String(H0), fetched_later: true },
-      { realm: 'pc', source_hour: String(H0 + HOUR), fetched_later: true },
+      { realm: 'pc', source_hour: String(H0) },
+      { realm: 'pc', source_hour: String(H0 + HOUR) },
     ]);
+
+    // Values keep the upstream item order: _a is keyed by market_pair[0] (CurrencyCorrupt), _b by market_pair[1].
     const sample = await pool.query(
-      `SELECT league, item_a_id, item_b_id FROM market_hours WHERE market_id = item_a_id || '|' || item_b_id LIMIT 1`,
+      `SELECT h.volume_traded_a, h.volume_traded_b, h.highest_stock_a, h.highest_stock_b, h.lowest_ratio_a, h.lowest_ratio_b
+       FROM pair_hours h
+       JOIN leagues l ON l.id = h.league_id
+       JOIN pairs p ON p.id = h.pair_id
+       JOIN items a ON a.id = p.item_a_id
+       JOIN items b ON b.id = p.item_b_id
+       WHERE l.name = 'Settlers' AND h.source_hour = to_timestamp($1)
+         AND a.metadata_path = 'Metadata/Items/Currency/CurrencyCorrupt'
+         AND b.metadata_path = 'Metadata/Items/Currency/CurrencyRerollRare'`,
+      [H0],
     );
-    assert.equal(sample.rows[0]?.league, 'Settlers');
+    assert.deepEqual(sample.rows, [
+      { volume_traded_a: '2', volume_traded_b: '1', highest_stock_a: '15', highest_stock_b: '0', lowest_ratio_a: '2', lowest_ratio_b: '1' },
+    ]);
+  });
+
+  it('names items from the item name map and leaves unknown paths unnamed', async () => {
+    const itemNames = new Map([
+      ['Metadata/Items/Currency/CurrencyRerollRare', 'Chaos Orb'],
+      ['Metadata/Items/Currency/CurrencyCorrupt', 'Vaal Orb'],
+    ]);
+    await ingest(pool, new FakeExchange(1), options({ itemNames }));
+    const { rows } = await pool.query(
+      `SELECT metadata_path, display_name FROM items WHERE display_name IS NOT NULL ORDER BY metadata_path`,
+    );
+    assert.deepEqual(rows, [
+      { metadata_path: 'Metadata/Items/Currency/CurrencyCorrupt', display_name: 'Vaal Orb' },
+      { metadata_path: 'Metadata/Items/Currency/CurrencyRerollRare', display_name: 'Chaos Orb' },
+    ]);
+
+    // A later snapshot can add a name; a path missing from it keeps its stored name.
+    await pool.query('UPDATE ingestion_cursors SET next_cursor = $1', [H0]);
+    await ingest(pool, new FakeExchange(1), options({ itemNames: new Map([['Metadata/Items/Currency/CurrencyCorrupt', 'Vaal']]) }));
+    const renamed = await pool.query(`SELECT count(*)::int AS n FROM items WHERE display_name IN ('Vaal', 'Chaos Orb')`);
+    assert.equal(renamed.rows[0]?.n, 2);
   });
 
   it('resumes from the committed cursor and stops when caught up', async () => {
@@ -138,14 +174,14 @@ describe('ingest (PostgreSQL)', { skip }, () => {
 
     const { rows } = await pool.query(
       `SELECT 'raw_digests' AS source, realm, count(*)::int AS n FROM raw_digests GROUP BY realm
-       UNION ALL SELECT 'market_hours', realm, count(*)::int FROM market_hours GROUP BY realm
+       UNION ALL SELECT 'pair_hours', l.realm, count(*)::int FROM pair_hours h JOIN leagues l ON l.id = h.league_id GROUP BY l.realm
        UNION ALL SELECT 'rejected_responses', realm, count(*)::int FROM rejected_responses GROUP BY realm
        UNION ALL SELECT 'ingestion_cursors', realm, count(*)::int FROM ingestion_cursors GROUP BY realm
        ORDER BY 1`,
     );
     assert.deepEqual(rows, [
       { source: 'ingestion_cursors', realm: 'pc', n: 1 },
-      { source: 'market_hours', realm: 'pc', n: 2 * FIXTURE_MARKETS },
+      { source: 'pair_hours', realm: 'pc', n: 2 * FIXTURE_MARKETS },
       { source: 'raw_digests', realm: 'pc', n: 2 },
       { source: 'rejected_responses', realm: 'pc', n: 1 },
     ]);
@@ -168,41 +204,80 @@ describe('ingest (PostgreSQL)', { skip }, () => {
     assert.equal(replay.hoursStored, 2);
     assert.equal(replay.marketsInserted, 0);
     assert.equal(replay.marketsAlreadyStored, 2 * FIXTURE_MARKETS);
-    assert.equal(await count('market_hours'), 2 * FIXTURE_MARKETS);
+    assert.equal(await count('pair_hours'), 2 * FIXTURE_MARKETS);
     assert.equal(await count('raw_digests'), 2);
   });
 
-  it('keeps numeric values exactly as sent', async () => {
-    const a = 'Metadata/Items/Currency/PrecisionTestA';
-    const b = 'Metadata/Items/Currency/PrecisionTestB';
-    const map = (x: string, y: string) => `{"${a}":${x},"${b}":${y}}`;
-    const raw =
-      `{"league":"Precision","market_id":"${a}|${b}","market_pair":["${a}","${b}"],` +
-      `"volume_traded":${map('123456789012345678901234567890', '0.1234567890123456789')},` +
-      `"lowest_stock":${map('0', '1')},"highest_stock":${map('9007199254740993', '2')},` +
-      `"lowest_ratio":${map('1', '1')},"highest_ratio":${map('1.50', '2')}}`;
+  it('keeps the stored response and rows when an hour comes back different', async () => {
     const exchange = new FakeExchange(1);
-    exchange.overrides.set(H0, { url: 'fake', status: 200, body: hourBody(H0, raw) });
+    await ingest(pool, exchange, options());
+    await pool.query('UPDATE ingestion_cursors SET next_cursor = $1', [H0]);
+    const extra = marketJson('Standard', 'Metadata/Items/Currency/ChangedA', 'Metadata/Items/Currency/ChangedB');
+    exchange.overrides.set(H0, { url: 'fake', status: 200, body: hourBody(H0, extra) });
+
+    const replay = await ingest(pool, exchange, options());
+    assert.equal(replay.hoursStored, 1);
+    assert.equal(replay.marketsInserted, 0);
+    assert.equal(await count('pair_hours'), FIXTURE_MARKETS);
+    const { rows } = await pool.query<{ market_count: number }>('SELECT market_count FROM raw_digests');
+    assert.deepEqual(rows, [{ market_count: FIXTURE_MARKETS }]);
+  });
+
+  it('stores integers up to 2^53 - 1 exactly', async () => {
+    const extra = marketJson('Precision', 'Metadata/Items/Currency/PrecisionA', 'Metadata/Items/Currency/PrecisionB', [
+      '9007199254740991',
+      '0',
+    ]);
+    const exchange = new FakeExchange(1);
+    exchange.overrides.set(H0, { url: 'fake', status: 200, body: hourBody(H0, extra) });
     await ingest(pool, exchange, options({ maxHours: 1 }));
 
     const { rows } = await pool.query(
-      `SELECT volume_traded->>item_a_id AS va, volume_traded->>item_b_id AS vb,
-              highest_stock->>item_a_id AS hs, highest_ratio->>item_a_id AS hr
-       FROM market_hours WHERE league = 'Precision'`,
+      `SELECT h.volume_traded_a, h.highest_ratio_b FROM pair_hours h JOIN leagues l ON l.id = h.league_id WHERE l.name = 'Precision'`,
     );
-    assert.deepEqual(rows, [
-      { va: '123456789012345678901234567890', vb: '0.1234567890123456789', hs: '9007199254740993', hr: '1.50' },
-    ]);
+    assert.deepEqual(rows, [{ volume_traded_a: '9007199254740991', highest_ratio_b: '0' }]);
   });
 
-  it('rolls back market rows and the digest when the cursor update fails', async () => {
+  it('rejects fractional values without storing the hour', async () => {
+    const extra = marketJson('Precision', 'Metadata/Items/Currency/PrecisionA', 'Metadata/Items/Currency/PrecisionB', ['1.50', '2']);
+    const exchange = new FakeExchange(2);
+    exchange.overrides.set(H0 + HOUR, { url: 'fake', status: 200, body: hourBody(H0 + HOUR, extra) });
+
+    await assert.rejects(ingest(pool, exchange, options()), MalformedResponseError);
+    assert.equal(await readCursor(pool), H0 + HOUR);
+    assert.equal(await count('pair_hours'), FIXTURE_MARKETS);
+    assert.equal(await count('rejected_responses'), 1);
+  });
+
+  it('rejects an hour that lists a stored pair in the reverse order', async () => {
+    const a = 'Metadata/Items/Currency/CurrencyCorrupt';
+    const b = 'Metadata/Items/Currency/CurrencyRerollRare';
+    const exchange = new FakeExchange(3);
+    exchange.overrides.set(H0 + HOUR, {
+      url: 'fake',
+      status: 200,
+      body: JSON.stringify({ next_change_id: H0 + 2 * HOUR, markets: [JSON.parse(marketJson('Settlers', b, a))] }),
+    });
+
+    await assert.rejects(ingest(pool, exchange, options()), /reverse order/);
+    assert.equal(await readCursor(pool), H0 + HOUR);
+    assert.equal(await count('raw_digests'), 1);
+    assert.equal(await count('pair_hours'), FIXTURE_MARKETS);
+    assert.equal(await count('pairs'), FIXTURE.pairs);
+    const { rows } = await pool.query('SELECT request_cursor, problems FROM rejected_responses');
+    assert.equal(rows[0]?.request_cursor, String(H0 + HOUR));
+    assert.match(JSON.stringify(rows[0]?.problems), /stored before in the reverse order/);
+  });
+
+  it('rolls back market rows, dictionaries and the digest when the cursor update fails', async () => {
     await pool.query('ALTER TABLE ingestion_cursors ADD CONSTRAINT test_reject_cursor CHECK (next_cursor < 0)');
     try {
       await assert.rejects(ingest(pool, new FakeExchange(2), options()), /test_reject_cursor/);
     } finally {
       await pool.query('ALTER TABLE ingestion_cursors DROP CONSTRAINT test_reject_cursor');
     }
-    assert.equal(await count('market_hours'), 0);
+    assert.equal(await count('pair_hours'), 0);
+    assert.equal(await count('items'), 0);
     assert.equal(await count('raw_digests'), 0);
     const { rows } = await pool.query('SELECT next_cursor, last_error FROM ingestion_cursors');
     assert.equal(rows[0]?.next_cursor, null);
@@ -236,6 +311,6 @@ describe('ingest (PostgreSQL)', { skip }, () => {
       await holder.query('SELECT pg_advisory_unlock_all()');
       holder.release();
     }
-    assert.equal(await count('market_hours'), 0);
+    assert.equal(await count('pair_hours'), 0);
   });
 });
