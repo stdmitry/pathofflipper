@@ -1,5 +1,6 @@
 import { REALM } from '../config.ts';
 import { WINDOWS, type WindowHours } from '../market/metrics.ts';
+import { type Quote, QUOTE_ITEMS, QUOTE_NAMES } from '../market/quotes.ts';
 
 /** A request the API refuses with 400, naming the offending parameter. */
 export class InvalidParameterError extends Error {
@@ -12,10 +13,11 @@ export class InvalidParameterError extends Error {
   }
 }
 
-export const QUOTES = { chaos: 'Metadata/Items/Currency/CurrencyRerollRare' } as const;
-export type Quote = keyof typeof QUOTES;
+/** Metadata path of each quote currency. */
+export const QUOTES: Record<Quote, string> = { chaos: QUOTE_ITEMS.chaos.path, divine: QUOTE_ITEMS.divine.path };
+export type { Quote };
 
-export const MARKET_SORTS = ['rank', 'turnover', 'units', 'persistence', 'volatility', 'rate', 'name'] as const;
+export const MARKET_SORTS = ['rank', 'turnover', 'units', 'persistence', 'volatility', 'rate', 'low', 'high', 'range', 'score', 'name'] as const;
 export type MarketSort = (typeof MARKET_SORTS)[number];
 
 /** History windows in hours; 30 days bounds a response to 720 points. */
@@ -113,7 +115,7 @@ export function parseMarketListParams(params: URLSearchParams): MarketListParams
   return {
     realm: realm(query),
     league: query.text('league', true),
-    quote: query.oneOf('quote', Object.keys(QUOTES) as Quote[], 'chaos'),
+    quote: query.oneOf('quote', QUOTE_NAMES, 'chaos'),
     window,
     scope: query.oneOf('scope', ['eligible', 'all'], 'eligible'),
     sort,
@@ -130,7 +132,7 @@ export function parseHistoryParams(params: URLSearchParams): HistoryParams {
   return {
     realm: realm(query),
     league: query.text('league', true),
-    quote: query.oneOf('quote', Object.keys(QUOTES) as Quote[], 'chaos'),
+    quote: query.oneOf('quote', QUOTE_NAMES, 'chaos'),
     window,
     windowHours: HISTORY_WINDOWS[window],
   };

@@ -1,12 +1,12 @@
 # Market metrics
 
-Status: calculation version 1, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4)). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
+Status: calculation version 2, 2026-09-24 ([#4](https://github.com/stdmitry/pathofflipper/issues/4); version 2 changed the ranking score). Code: [`src/market/metrics.ts`](../src/market/metrics.ts) (definitions) and [`src/metrics-run.ts`](../src/metrics-run.ts) (loading and storage). The field semantics these build on are in [API observations](./exchange-api-observations.md#field-semantics).
 
-**These metrics rank market activity, not profitability.** A high rank means a lot of Chaos changed hands, steadily, in a market with complete data. It does not mean a flip in that market is profitable or will fill. Estimating profit over time is gated on [#7](https://github.com/stdmitry/pathofflipper/issues/7).
+**The rank orders research candidates; it is not a profit estimate.** A high rank means a wide traded price range relative to the price, in a market where a lot of Chaos changes hands steadily and the data is complete. The range comes from executed trades at different moments, not from a spread anyone could capture, so a high rank does not mean a flip will fill or pay. Estimating profit over time is gated on [#7](https://github.com/stdmitry/pathofflipper/issues/7).
 
 ## Scope
 
-- PoE 1 PC, every **public** league present in the window, and markets **quoted directly in Chaos Orbs** (Chaos Orb is one of the pair's two items). Other pairs stay in `pair_hours` for later. Private leagues, named `… (PL<number>)` (`leagues.private`), are skipped: 2,002 of the first 2,034 stored leagues were private, and they are not markets a player can join.
+- PoE 1 PC, every **public** league present in the window, and markets **quoted directly in Chaos Orbs or in Divine Orbs**, screened separately (`src/market/quotes.ts`). Each quote has its own snapshot and ranking. Prices, turnover and scores are in that quote's units, so they are not compared across quotes, and nothing is converted between them. (Chaos Orb is one of the pair's two items). Other pairs stay in `pair_hours` for later. Private leagues, named `… (PL<number>)` (`leagues.private`), are skipped: 2,002 of the first 2,034 stored leagues were private, and they are not markets a player can join.
 - Rates read as **Chaos per one unit of the other item** (the base). The upstream pair order is ignored: `quoteHour` re-orients every market.
 - Windows are the last **1, 6 and 24 hours**, ending with the as-of hour. The as-of hour is the newest parsed hour by default.
 
@@ -46,17 +46,25 @@ A market is **eligible** for a window when all of these hold:
 |---|---|---|
 | Coverage | ≥ 75% | Keeps windows that overlap an outage or a collection gap from being compared with complete ones. At 24h this tolerates 6 unknown hours. |
 | Persistence | ≥ 50% | Flipping needs a market that trades most hours, not one burst. |
-| Turnover | ≥ 100 Chaos per covered hour | Removes markets that trade a few Chaos worth per hour. |
+| Turnover | ≥ 100 Chaos, or ≥ 0.3 Divine, per covered hour | Removes markets that trade a few Chaos worth per hour. The Divine minimum is about the same value at the ~330 Chaos per Divine seen in 2026. |
 | Rate | present | At least one trade in the window. |
 
-Eligible markets are ranked per league and window by **turnover per hour**, highest first. Ties go to the higher persistence, then to the lower pair id for a stable order. Ineligible markets are stored without a rank (`activity_rank IS NULL`), so they can still be looked up.
+Eligible markets are ranked per league and window by their **score**, highest first:
+
+> score = (high − low) / low × turnover per hour
+
+`high` and `low` are the window's highest and lowest executed rates in Chaos per unit, so the first factor is the traded price range relative to the price, and the score is in Chaos per hour (`market_metrics.rank_score`). Ties go to the higher turnover, then to the lower pair id for a stable order. Ineligible markets are stored without a rank (`activity_rank IS NULL`) but keep their score, so they can still be looked up.
+
+The eligibility thresholds matter more under this score. A single odd trade in a thin market can give a range of several hundred percent: Runegraft of the Fortress traded between 211c and 728c at 6 units per hour in Allflame. The ≥100c/h and ≥50% persistence thresholds keep such markets out of the ranking.
+
+Version 1 (until 2026-09-24) ranked by turnover per hour alone.
 
 How the defaults were checked, on Mirage's 24h window ending 2026-04-15 12:00 UTC (mid-league, 1,023 Chaos markets, full coverage):
 
 - Turnover quartiles were about 23, 440 and 4,800 Chaos/hour, with the 90th percentile about 25,000.
 - The median persistence was 100%, the 25th percentile 37.5%.
 - With the defaults, 645 markets are eligible. Raising turnover to 1,000 Chaos/hour would leave 427; dropping persistence to 25% would add 10.
-- The top ranks were Divine Orb (328.6 c, range 300–345, volatility 0.010), The Black Barya, Valdo's Puzzle Box, Horned Scarab of Bloodlines and others. Stacked Deck (rank 7) shows why the range is not a spread: a 0.02 c low against a 4.06 c weighted rate.
+- Under version 1, the top ranks were Divine Orb (328.6 c, range 300–345, volatility 0.010), The Black Barya, Valdo's Puzzle Box, Horned Scarab of Bloodlines and others. Stacked Deck (rank 7) shows why the range is not a spread: a 0.02 c low against a 4.06 c weighted rate.
 
 Chaos turnover depends on each league's economy, so re-check these distributions at league start. Changing a threshold or definition means bumping `CALC_VERSION`.
 

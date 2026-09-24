@@ -40,7 +40,7 @@ async function main(): Promise<void> {
     server.once('error', reject);
     server.listen(port, host, resolve);
   });
-  logger.info('listening', { url: `http://${host}:${port}/api/status` });
+  logger.info('listening', { dashboard: `http://${host}:${port}/`, api: `http://${host}:${port}/api/status` });
 }
 
 try {

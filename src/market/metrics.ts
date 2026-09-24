@@ -5,7 +5,7 @@ import { compareRational, isCovered, type HourStatus, type QuotedHour, type Rati
  * Market activity metrics over trailing windows. The definitions, thresholds and their rationale are documented in
  * specs/market-metrics.md. Bump CALC_VERSION whenever a definition or threshold changes.
  */
-export const CALC_VERSION = 1;
+export const CALC_VERSION = 2;
 
 export const WINDOWS = [1, 6, 24] as const;
 export type WindowHours = (typeof WINDOWS)[number];
@@ -16,7 +16,7 @@ export const ELIGIBILITY = {
   minCoverage: 0.75,
   /** Share of covered hours that must have trades. */
   minPersistence: 0.5,
-  /** Quote units (Chaos Orbs) traded per covered hour. */
+  /** Chaos Orbs traded per covered hour; each quote sets its own minimum (src/market/quotes.ts). */
   minQuotePerHour: 100,
 } as const;
 
@@ -102,27 +102,46 @@ export function basePerHour(m: WindowMetrics): number | null {
   return m.coveredHours === 0 ? null : Number(m.baseVolume) / m.coveredHours;
 }
 
-/** Whether a market passes the default screen. Staleness is checked by readers, since it depends on read time. */
-export function isEligible(m: WindowMetrics): boolean {
+/**
+ * Whether a market passes the default screen, with the minimum turnover in quote units per hour. Staleness is checked
+ * by readers, since it depends on read time.
+ */
+export function isEligible(m: WindowMetrics, minQuotePerHour: number = ELIGIBILITY.minQuotePerHour): boolean {
   return (
     m.rate !== null &&
     coverage(m) >= ELIGIBILITY.minCoverage &&
     persistence(m) >= ELIGIBILITY.minPersistence &&
-    (quotePerHour(m) ?? 0) >= ELIGIBILITY.minQuotePerHour
+    (quotePerHour(m) ?? 0) >= minQuotePerHour
   );
 }
 
 /**
- * Activity ranks for one league and window: eligible markets by quote turnover per covered hour, highest first, then
- * persistence, then key for a stable order. Ineligible markets get no rank. This ranks market activity, not
- * profitability.
+ * The ranking score: the window's relative price range times its Chaos turnover,
+ * (high − low) / low × quote per covered hour. Null without trades or coverage. The range comes from executed trades
+ * and is not a spread anyone can capture, so the score orders research candidates; it is not a profit estimate.
  */
-export function activityRanks<K>(markets: { key: K; sortKey: string; metrics: WindowMetrics }[]): Map<K, number> {
-  const eligible = markets.filter((m) => isEligible(m.metrics));
+export function rankScore(m: WindowMetrics): number | null {
+  const turnover = quotePerHour(m);
+  if (!m.lowRate || !m.highRate || turnover === null) return null;
+  // (h/l) − 1 with h = hn/hd and l = ln/ld, as one exact fraction before converting.
+  const num = m.highRate.num * m.lowRate.den - m.lowRate.num * m.highRate.den;
+  const den = m.highRate.den * m.lowRate.num;
+  return (Number(num) / Number(den)) * turnover;
+}
+
+/**
+ * Ranks for one league and window: eligible markets by rankScore, highest first, then turnover, then key for a stable
+ * order. Ineligible markets get no rank.
+ */
+export function rankMarkets<K>(
+  markets: { key: K; sortKey: string; metrics: WindowMetrics }[],
+  minQuotePerHour: number = ELIGIBILITY.minQuotePerHour,
+): Map<K, number> {
+  const eligible = markets.filter((m) => isEligible(m.metrics, minQuotePerHour));
   eligible.sort(
     (x, y) =>
+      (rankScore(y.metrics) ?? 0) - (rankScore(x.metrics) ?? 0) ||
       (quotePerHour(y.metrics) ?? 0) - (quotePerHour(x.metrics) ?? 0) ||
-      persistence(y.metrics) - persistence(x.metrics) ||
       (x.sortKey < y.sortKey ? -1 : x.sortKey > y.sortKey ? 1 : 0),
   );
   return new Map(eligible.map((m, index) => [m.key, index + 1]));

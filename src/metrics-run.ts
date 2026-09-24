@@ -5,24 +5,28 @@ import { NUMERIC_FIELDS, type NumericField } from './exchange/parse.ts';
 import { withMetricsLock } from './ingest.ts';
 import { silentLogger, type Logger } from './log.ts';
 import {
-  activityRanks,
   CALC_VERSION,
   isEligible,
+  rankMarkets,
+  rankScore,
   type MarketHour,
   WINDOWS,
   windowMetrics,
   type WindowMetrics,
 } from './market/metrics.ts';
+import { type Quote, QUOTE_ITEMS } from './market/quotes.ts';
 import { classifyHour, quoteHour, type Rational } from './market/semantics.ts';
 
 /** Chaos Orb, the quote currency of the default screen. */
-export const CHAOS_PATH = 'Metadata/Items/Currency/CurrencyRerollRare';
+export const CHAOS_PATH = QUOTE_ITEMS.chaos.path;
 
 const LONGEST_WINDOW = Math.max(...WINDOWS);
 
 export interface MetricsOptions {
   /** Newest source hour of the windows (unix seconds); defaults to the newest parsed hour. */
   asOfHour?: number;
+  /** Quote currency whose markets to compute (default chaos); each quote has its own snapshot. */
+  quote?: Quote;
   logger?: Logger;
 }
 
@@ -53,7 +57,8 @@ interface PairHourRow {
 export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}): Promise<MetricsSummary> {
   const logger = options.logger ?? silentLogger;
   return withMetricsLock(pool, async () => {
-    const quote = await pool.query<{ id: number }>('SELECT id FROM items WHERE metadata_path = $1', [CHAOS_PATH]);
+    const quoteItem = QUOTE_ITEMS[options.quote ?? 'chaos'];
+    const quote = await pool.query<{ id: number }>('SELECT id FROM items WHERE metadata_path = $1', [quoteItem.path]);
     const quoteId = quote.rows[0]?.id;
     const asOfHour = options.asOfHour ?? (await newestParsedHour(pool));
     const summary: MetricsSummary = {
@@ -65,7 +70,7 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
       eligible: 0,
     };
     if (asOfHour === undefined || quoteId === undefined) {
-      logger.warn('nothing to compute: no parsed hours or no Chaos Orb item yet');
+      logger.warn('nothing to compute: no parsed hours or no quote item yet', { quote: options.quote ?? 'chaos' });
       return summary;
     }
 
@@ -101,10 +106,10 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
         byLeague.set(market.leagueId, list);
       }
       for (const [leagueId, list] of byLeague) {
-        const ranks = activityRanks(list);
+        const ranks = rankMarkets(list, quoteItem.minPerHour);
         for (const { key, metrics } of list) {
           results.push({ leagueId, pairId: key, windowHours, metrics, rank: ranks.get(key) });
-          if (isEligible(metrics)) summary.eligible++;
+          if (isEligible(metrics, quoteItem.minPerHour)) summary.eligible++;
         }
       }
     }
@@ -137,16 +142,17 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
         ...fraction('low_rate', metrics.lowRate),
         ...fraction('high_rate', metrics.highRate),
         volatility: metrics.volatility,
+        rank_score: rankScore(metrics),
         activity_rank: rank ?? null,
       }));
       await client.query(
         `INSERT INTO market_metrics (run_id, league_id, pair_id, window_hours, covered_hours, traded_hours, base_volume,
            quote_volume, rate_num, rate_den, low_rate_num, low_rate_den, high_rate_num, high_rate_den, volatility,
-           activity_rank)
+           rank_score, activity_rank)
          SELECT $1, x.* FROM jsonb_to_recordset($2::jsonb) AS x(league_id integer, pair_id integer,
            window_hours smallint, covered_hours smallint, traded_hours smallint, base_volume bigint, quote_volume bigint,
            rate_num bigint, rate_den bigint, low_rate_num bigint, low_rate_den bigint, high_rate_num bigint,
-           high_rate_den bigint, volatility double precision, activity_rank integer)`,
+           high_rate_den bigint, volatility double precision, rank_score double precision, activity_rank integer)`,
         [run.rows[0]!.id, JSON.stringify(rows)],
       );
       await client.query('COMMIT');
@@ -156,7 +162,12 @@ export async function computeMetrics(pool: pg.Pool, options: MetricsOptions = {}
     } finally {
       client.release();
     }
-    logger.info('metrics computed', { as_of: hourIso(asOfHour), calc_version: CALC_VERSION, rows: summary.rows });
+    logger.info('metrics computed', {
+      quote: options.quote ?? 'chaos',
+      as_of: hourIso(asOfHour),
+      calc_version: CALC_VERSION,
+      rows: summary.rows,
+    });
     return summary;
   });
 }

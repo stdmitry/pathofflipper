@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Path of Flipper · Currency market screening</title>
+    <link rel="stylesheet" href="/vendor/uplot-1.6.32/uPlot.min.css" />
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/vendor/uplot-1.6.32/uPlot.iife.min.js" defer></script>
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <h1>Path of Flipper</h1>
+        <p class="subtitle">Path of Exile 1 · PC · currency exchange markets quoted in Chaos Orbs or Divine Orbs</p>
+      </div>
+      <div id="status" class="status" role="status" aria-live="polite">Checking data…</div>
+    </header>
+
+    <p class="notice">
+      <strong>Historical screening, not live quotes.</strong>
+      Low and high are the cheapest and dearest prices paid in past trades, not prices you can buy or sell at now,
+      and the gap between them is not a spread you can capture. The rank orders markets by that gap relative to the
+      low price, times the amount traded per hour. It points to markets worth a closer look, not to proven profit.
+    </p>
+    <ul id="problems" class="problems" hidden></ul>
+
+    <main class="layout">
+      <section class="markets" aria-labelledby="markets-title">
+        <h2 id="markets-title" class="visually-hidden">Markets</h2>
+        <form id="controls" class="controls" role="search">
+          <label>
+            League
+            <select id="league" name="league" disabled></select>
+          </label>
+          <fieldset class="segmented">
+            <legend>Priced in</legend>
+            <label><input type="radio" name="quote" value="chaos" /> Chaos</label>
+            <label><input type="radio" name="quote" value="divine" /> Divine</label>
+          </fieldset>
+          <fieldset class="segmented">
+            <legend>Window</legend>
+            <label><input type="radio" name="window" value="1h" /> 1h</label>
+            <label><input type="radio" name="window" value="6h" /> 6h</label>
+            <label><input type="radio" name="window" value="24h" /> 24h</label>
+          </fieldset>
+          <label class="search">
+            Search
+            <input id="q" name="q" type="search" placeholder="Divine, scarab, …" autocomplete="off" maxlength="100" />
+          </label>
+          <label class="check">
+            <input id="scope" type="checkbox" name="scope" />
+            Include ineligible markets
+          </label>
+        </form>
+
+        <div class="table-wrap">
+          <table id="table">
+            <thead>
+              <tr>
+                <th data-sort="rank" class="num" title="Position by score among eligible markets">Rank</th>
+                <th data-sort="name">Item</th>
+                <th data-sort="low" class="num" title="Lowest price paid in a trade during the window">Low</th>
+                <th data-sort="high" class="num" title="Highest price paid in a trade during the window">High</th>
+                <th data-sort="range" class="num" title="Highest minus lowest price paid in the window; not a spread you can capture">High − Low</th>
+                <th data-sort="score" class="num" title="(High − Low) / Low × amount traded per hour">Score</th>
+                <th data-sort="turnover" id="turnover-head" class="num" title="Amount of the quote currency traded per covered hour">Chaos/h</th>
+                <th data-sort="units" class="num" title="Units of the item traded per covered hour">Units/h</th>
+                <th data-sort="persistence" class="num" title="Hours with trades / hours with data">Traded</th>
+                <th class="num" title="Hours with data / hours in the window">Coverage</th>
+                <th data-sort="volatility" class="num" title="Spread of hourly rates, weighted by volume">Volatility</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <nav class="pager" aria-label="Pages">
+          <button id="prev" type="button">← Previous</button>
+          <span id="page-info"></span>
+          <button id="next" type="button">Next →</button>
+        </nav>
+        <p id="table-meta" class="meta"></p>
+      </section>
+
+      <aside id="detail" class="detail" aria-labelledby="detail-title" hidden>
+        <header class="detail-head">
+          <h2 id="detail-title"></h2>
+          <button id="close" type="button" class="close" aria-label="Close details">×</button>
+        </header>
+        <fieldset class="segmented">
+          <legend>History</legend>
+          <label><input type="radio" name="history" value="24h" /> 24h</label>
+          <label><input type="radio" name="history" value="7d" /> 7d</label>
+          <label><input type="radio" name="history" value="30d" /> 30d</label>
+        </fieldset>
+        <div id="detail-body"></div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      Data from the public Path of Exile currency exchange API, collected hourly. This product isn't affiliated with or
+      endorsed by Grinding Gear Games in any way. Charts: <a href="https://github.com/leeoniya/uPlot">uPlot</a> (MIT).
+    </footer>
+  </body>
+</html>

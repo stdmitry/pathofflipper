@@ -149,6 +149,30 @@ describe('computeMetrics (PostgreSQL)', { skip }, () => {
     });
   });
 
+  it('computes Divine-quoted markets as a separate snapshot', async () => {
+    await loadMirageHours(pool);
+    await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR });
+    const divine = await computeMetrics(pool, { asOfHour: H0 + 2 * HOUR, quote: 'divine' });
+    // In the trimmed fixture only Chaos Orb trades against Divine, so it is the one Divine-quoted market.
+    assert.deepEqual([divine.leagues, divine.markets, divine.rows], [1, 1, 3]);
+    const runs = await pool.query<{ path: string }>(
+      'SELECT i.metadata_path AS path FROM metric_runs r JOIN items i ON i.id = r.quote_item_id ORDER BY r.id',
+    );
+    assert.deepEqual(runs.rows.map((r) => r.path), [CHAOS_PATH, DIVINE]);
+
+    const { rows } = await pool.query<MetricRow>(
+      `SELECT m.window_hours, m.quote_volume, m.base_volume, m.rate_num, m.rate_den, m.activity_rank
+       FROM market_metrics m JOIN metric_runs r ON r.id = m.run_id JOIN items q ON q.id = r.quote_item_id
+       WHERE q.metadata_path = $1 AND m.window_hours = 1`,
+      [DIVINE],
+    );
+    const [chaos, div] = volumes(DIVINE)[2]!;
+    // Quoted in Divine: Divine is the quote side, Chaos the base.
+    assert.deepEqual([BigInt(rows[0]!.quote_volume), BigInt(rows[0]!.base_volume)], [div, chaos]);
+    assert.equal(BigInt(rows[0]!.rate_num!) * chaos, div * BigInt(rows[0]!.rate_den!), 'divine per chaos');
+    assert.equal(rows[0]!.activity_rank, 1, 'tens of thousands of Divines an hour clear the 0.3 div/h minimum');
+  });
+
   it('skips private leagues', async () => {
     await loadMirageHours(pool);
     // One more hour with the same Chaos/Divine market in Mirage and in a private league.

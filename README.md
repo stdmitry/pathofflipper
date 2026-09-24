@@ -34,7 +34,7 @@ npm run fetch -- --max-hours 3         # smaller batch
 npm run fetch -- --help
 npm run parse                          # parse every fetched hour not parsed yet into pair_hours
 npm run metrics                        # recompute Chaos market metrics as of the newest parsed hour
-npm run serve                          # read API on http://127.0.0.1:8080 (see Read API)
+npm run serve                          # dashboard and read API on http://127.0.0.1:8080
 ```
 
 Fetch stores only raw responses, so run `npm run parse` and then `npm run metrics` afterwards, for example `npm run fetch; npm run parse; npm run metrics` in a schedule, with `npm run serve` running alongside. Use `;` rather than `&&` so that hours fetched before a failure still get parsed and counted.
@@ -69,7 +69,7 @@ Validation requires every numeric value to be an integer within ±2^53, each num
 
 ## Metrics
 
-`npm run metrics` computes activity metrics for every Chaos-quoted market over the last 1, 6 and 24 hours: coverage, turnover, traded units, persistence, a volume-weighted rate, the executed-rate range and volatility. It replaces the stored snapshot (`metric_runs`, `market_metrics`) in one transaction. `--as-of <hour>` recomputes an earlier hour. Eligible markets get an `activity_rank` by Chaos turnover. **The rank measures activity, not profitability.** Definitions, thresholds and the data behind them are in [Market metrics](./specs/market-metrics.md).
+`npm run metrics` computes metrics for every Chaos-quoted and every Divine-quoted market over the last 1, 6 and 24 hours, as a separate snapshot per quote: coverage, turnover, traded units, persistence, a volume-weighted rate, the executed-rate range and volatility. It replaces the stored snapshot (`metric_runs`, `market_metrics`) in one transaction. `--as-of <hour>` recomputes an earlier hour. Eligible markets get an `activity_rank` by score = (high − low) / low × Chaos per hour. **The score points to candidates; it is not a profit estimate.** Definitions, thresholds and the data behind them are in [Market metrics](./specs/market-metrics.md).
 
 ```sql
 -- Top markets of a league over the last 24 hours
@@ -85,6 +85,17 @@ WHERE l.name = 'Mirage' AND m.window_hours = 24 AND m.activity_rank IS NOT NULL
 ORDER BY m.activity_rank LIMIT 20;
 ```
 
+## Dashboard
+
+`npm run serve` also serves the dashboard at <http://127.0.0.1:8080/>. It is plain HTML and browser JavaScript in [`public/`](./public), with no build step. It reads only the API described below.
+
+- **Market table:** pick a league, the quote currency (Chaos or Divine; prices, turnover and scores are shown in it), window (1h, 6h, 24h) and search text. Prices are the lowest and highest paid in the window and their difference, with one decimal. Sort by any column header, page through 50 at a time, and optionally include ineligible markets. The page state lives in the address bar, so a view can be bookmarked or shared.
+- **Market detail:** click an item to see its summary, a chart of each hour's lowest and highest traded price (with the band between them) and Chaos traded, and a strip showing each hour's status. Hours without trades break the lines; hours without data are hatched. History covers 24h, 7d or 30d.
+- **States:** the header pill shows data age (green for fresh, amber for stale or degraded, red when there's no data), with the problems from `/api/status` listed underneath. Tables show loading, empty (with a hint to include ineligible markets) and error (with retry) states.
+- **Labels:** the page says throughout that it shows historical screening, not live quotes or profit forecasts. There are no budget inputs.
+
+Charts use [uPlot](https://github.com/leeoniya/uPlot) 1.6.32 (MIT), vendored in `public/vendor/uplot-1.6.32/` from the npm tarball (`sha512-KIMVnG68…`). To update it, unpack the new `npm pack uplot@<version>` into a new versioned directory and change the two paths in `index.html`. The versioned path lets browsers cache the old copy indefinitely. `npm run typecheck` also checks the browser code (JSDoc types, `public/tsconfig.json`).
+
 ## Read API
 
 `npm run serve` serves stored data over HTTP (`--port`/`API_PORT`, default 8080; `--host`/`API_HOST`, default `127.0.0.1`). It only reads PostgreSQL and never calls the exchange, so traffic to it cannot reach upstream. All endpoints are `GET` (or `HEAD`), take `realm=pc` optionally, and answer JSON as `{ "data": ..., "meta": ... }`.
@@ -92,13 +103,13 @@ ORDER BY m.activity_rank LIMIT 20;
 | Endpoint | Returns |
 |---|---|
 | `GET /api/leagues` | Public leagues in the current metrics snapshot: `active` (present in the newest hour), market and eligible-market counts for 24h. Private leagues (`… (PL<number>)`) are stored but never served; asking for one answers 404. |
-| `GET /api/markets?league=<name>` | Chaos markets of a league with their metrics. `window=1h\|6h\|24h` (24h), `scope=eligible\|all` (eligible), `sort=rank\|turnover\|units\|persistence\|volatility\|rate\|name` (rank), `order=asc\|desc`, `q=<text>` (name or path), `limit` 1–100 (50), `offset` 0–10,000. `meta.total` counts all matches. |
-| `GET /api/markets/<id>/history?league=<name>` | One point per hour, ending at the newest parsed hour, plus a summary over the window. `window=24h\|7d\|30d` (24h). Every hour has a `status`: `missing`, `exchange-down`, `league-absent` (all three unknown), `inactive`, `listed` or `traded`. Gaps are never left out or zero-filled. |
+| `GET /api/markets?league=<name>` | Markets of a league with their metrics, quoted in `quote=chaos\|divine` (chaos). `window=1h\|6h\|24h` (24h), `scope=eligible\|all` (eligible), `sort=rank\|score\|turnover\|units\|persistence\|volatility\|rate\|low\|high\|range\|name` (rank; `range` is high minus low in the quote), `order=asc\|desc`, `q=<text>` (name or path), `limit` 1–100 (50), `offset` 0–10,000. `meta.total` counts all matches. |
+| `GET /api/markets/<id>/history?league=<name>` | Takes the same `quote`. One point per hour, ending at the newest parsed hour, plus a summary over the window. `window=24h\|7d\|30d` (24h). Every hour has a `status`: `missing`, `exchange-down`, `league-absent` (all three unknown), `inactive`, `listed` or `traded`. Gaps are never left out or zero-filled. |
 | `GET /api/status` | `state` (`ok` or `degraded`) with the `problems` behind it: `no_data`, `stale_source`, `last_fetch_failed`, `parse_failures`, `rejected_responses`, `metrics_behind`, `gaps_last_24h`. Also cursor, newest fetched and parsed hours, pending and failed parses, and the metrics snapshot. |
 
 - **Market ids** in paths are opaque. Take them from `/api/markets`; they stay the same across database rebuilds.
 - **Units** are listed in `meta.units`. Rates are `{num, den, value}`: exact fraction strings plus a decimal for display. Integer totals are strings, so they stay exact beyond 2^53.
-- **Freshness**: every response carries `as_of_hour`, `source_age_hours` and `stale` (older than 3 hours). Stale data is still served, so clients can keep showing it with its age during an outage. Market responses also carry `calc_version`, `computed_at` and the reminder that the ranking measures activity, not profitability.
+- **Freshness**: every response carries `as_of_hour`, `source_age_hours` and `stale` (older than 3 hours). Stale data is still served, so clients can keep showing it with its age during an outage. Market responses also carry `calc_version`, `computed_at` and how the ranking is defined, with the reminder that it is not a validated profit estimate.
 - **Errors** are `{ "error": { "code", "message" } }`: `400 invalid_parameter` (with `parameter`; unknown, repeated or out-of-range parameters are all rejected), `404 not_found`, `405` for other methods, `503 unavailable` when the database is down, and `500 internal`.
 - **Caching**: responses other than `/api/status` are cached in memory under a version that changes when a parse or metrics run commits, so new data shows up on the next request. They carry an `ETag` and answer `If-None-Match` with `304`.
 
