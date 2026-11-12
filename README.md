@@ -37,7 +37,39 @@ npm run metrics                        # recompute Chaos market metrics as of th
 npm run serve                          # dashboard and read API on http://127.0.0.1:8080
 ```
 
-Fetch stores only raw responses, so run `npm run parse` and then `npm run metrics` afterwards, for example `npm run fetch; npm run parse; npm run metrics` in a schedule, with `npm run serve` running alongside. Use `;` rather than `&&` so that hours fetched before a failure still get parsed and counted.
+Fetch stores only raw responses, so `npm run parse` and then `npm run metrics` have to follow it. To run the stages on a schedule, use the pipeline (below) rather than chaining the commands in cron.
+
+## Scheduled pipeline
+
+```sh
+npm run scheduler                      # runs until stopped: a tick now, then every hour at hh:01
+npm run pipeline                       # one tick, then exit; for cron, e.g. */5 * * * *
+npm run pipeline -- --dry-run          # which jobs are due and why
+npm run pipeline -- --only metrics,runegraft --force   # recompute, e.g. after npm run gold-fees
+docker compose --profile scheduler up -d               # the scheduler in a container, next to PostgreSQL
+```
+
+A tick runs these jobs in order ([#29](https://github.com/stdmitry/pathofflipper/issues/29), [spec](./specs/scheduled-pipeline-spec.md)):
+
+| Job | Runs when | Does |
+|---|---|---|
+| `fetch` | every tick | `npm run fetch`: up to `--max-hours` (default `POE_MAX_HOURS` or 24) hours from the cursor |
+| `parse` | the newest stored hour changed | `npm run parse` |
+| `metrics` | the newest parsed hour or the calculation version changed | `npm run metrics` for Chaos and Divine |
+| `runegraft` | the Chaos snapshot or `data/runegraft-weights.json` changed | stores EV, break-even and recommended buy price per league and window in `runegraft_runs` |
+| `check-semantics` | first tick of each UTC day | `npm run check-semantics` over all stored data |
+
+Dependencies follow data, not exit codes: a job runs when its input changed since its last successful run, whatever happened to the jobs before it in this tick. If fetch fails after storing 5 hours, parse still parses them. A failed job is retried in the next tick. A tick with nothing new runs only fetch and records nothing. Only one tick runs at a time; another one exits 0 at once. A stage lock held by a manual run (for example `npm run fetch`) makes that job `busy` for the tick.
+
+The scheduler ticks at hh:01, since the exchange publishes an hour right after it ends. Until that hour is stored, it retries every 5 minutes up to hh:30. While fetch works through a backlog (it stopped at `--max-hours`), the next tick starts immediately. Metrics are computed for the newest parsed hour only; use `npm run metrics -- --as-of` for hours in between.
+
+`job_state` holds each job's last status, watermarks and consecutive failures; `job_runs` keeps 30 days of runs that did something. `GET /api/status` lists the jobs, and a job that failed 3 ticks in a row adds the `jobs_failing` problem. Ctrl+C or SIGTERM lets the current job finish its current hour; a second one exits immediately. `npm run gold-fees -- --download` and `npm run item-names -- --download` are not scheduled, because their diffs need a review.
+
+```sql
+SELECT job, last_status, last_success_at, output_watermark, consecutive_failures, last_error FROM job_state;
+SELECT l.name, r.window_hours, r.as_of_hour, round(r.ev::numeric, 2) AS ev, round(r.recommended::numeric, 2) AS recommended
+FROM runegraft_runs r JOIN leagues l ON l.id = r.league_id ORDER BY r.as_of_hour DESC, l.name, r.window_hours;
+```
 
 Every run, manual or scheduled, fetches PoE 1 PC only. `--realm` and `POE_REALM` accept only `pc`; any other value, such as `xbox` or `sony`, exits with 2 before connecting to the database or the API.
 

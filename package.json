@@ -22,7 +22,9 @@
     "serve": "node --env-file-if-exists=.env src/cli/serve.ts",
     "test": "node --env-file-if-exists=.env --test --test-concurrency=1 \"test/**/*.test.ts\"",
     "typecheck": "tsc && tsc -p public",
-    "runegraft": "node --env-file-if-exists=.env src/cli/runegraft.ts"
+    "runegraft": "node --env-file-if-exists=.env src/cli/runegraft.ts",
+    "pipeline": "node --env-file-if-exists=.env src/cli/pipeline.ts",
+    "scheduler": "node --env-file-if-exists=.env src/cli/scheduler.ts"
   },
   "dependencies": {
     "pg": "^8.23.0"

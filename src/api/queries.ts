@@ -415,8 +415,11 @@ export async function marketHistory(pool: pg.Pool, basePath: string, params: His
 
 // ---- GET /api/status ----------------------------------------------------------------------------------------------
 
+/** A scheduled job that failed this many ticks in a row makes the status degraded (specs/scheduled-pipeline-spec.md). */
+export const JOB_FAILING_AFTER = 3;
+
 export async function collectorStatus(pool: pg.Pool, now: Date) {
-  const [cursor, digests, rejected, snap] = await Promise.all([
+  const [cursor, digests, rejected, snap, jobs] = await Promise.all([
     pool.query<{ next_cursor: string | null; last_success_at: Date | null; last_error: string | null; last_error_at: Date | null }>(
       'SELECT next_cursor, last_success_at, last_error, last_error_at FROM ingestion_cursors WHERE realm = $1',
       [REALM],
@@ -434,6 +437,21 @@ export async function collectorStatus(pool: pg.Pool, now: Date) {
       [REALM, now],
     ),
     snapshot(pool, QUOTES.chaos),
+    pool.query<{
+      job: string;
+      last_status: string;
+      last_run_at: Date;
+      last_success_at: Date | null;
+      input_watermark: string | null;
+      output_watermark: string | null;
+      consecutive_failures: number;
+      last_error: string | null;
+      last_error_at: Date | null;
+    }>(
+      `SELECT job, last_status, last_run_at, last_success_at, input_watermark, output_watermark, consecutive_failures,
+              last_error, last_error_at
+       FROM job_state ORDER BY job`,
+    ),
   ]);
   const c = cursor.rows[0];
   const d = digests.rows[0]!;
@@ -457,6 +475,7 @@ export async function collectorStatus(pool: pg.Pool, now: Date) {
   if (Number(rejected.rows[0]!.n) > 0) problems.push('rejected_responses');
   if (!snap || (parsed !== undefined && snap.asOfHour < parsed)) problems.push('metrics_behind');
   if (parsed !== undefined && parsedLast24h < 24) problems.push('gaps_last_24h');
+  if (jobs.rows.some((j) => j.consecutive_failures >= JOB_FAILING_AFTER)) problems.push('jobs_failing');
 
   return {
     data: {
@@ -476,6 +495,18 @@ export async function collectorStatus(pool: pg.Pool, now: Date) {
         parsed_hours_last_24h: parsedLast24h,
       },
       metrics: snap ? { as_of_hour: hourIso(snap.asOfHour), computed_at: snap.computedAt.toISOString(), calc_version: snap.calcVersion } : null,
+      jobs: jobs.rows.map((j) => ({
+        job: j.job,
+        last_status: j.last_status,
+        last_run_at: j.last_run_at.toISOString(),
+        last_success_at: j.last_success_at?.toISOString() ?? null,
+        input_watermark: j.input_watermark,
+        output_watermark: j.output_watermark,
+        consecutive_failures: j.consecutive_failures,
+        failing: j.consecutive_failures >= JOB_FAILING_AFTER,
+        last_error: j.last_error,
+        last_error_at: j.last_error_at?.toISOString() ?? null,
+      })),
     },
     meta: { realm: REALM, now: now.toISOString() },
   };
