@@ -17,6 +17,16 @@ import {
   statusBanner,
   statusCounts,
   volatilityText,
+  flippingHref,
+  legsText,
+  moneyText,
+  navSearch,
+  OPP_DEFAULT_STATE,
+  opportunityQuery,
+  opportunityRow,
+  oppStateFromSearch,
+  searchFromOppState,
+  selectedKinds,
 } from '../public/view.js';
 
 const rate = (value: number) => ({ num: String(value), den: '1', value });
@@ -194,6 +204,96 @@ describe('page state in the address bar', () => {
       offset: '0',
       order: 'desc',
       q: 'orb',
+    });
+  });
+});
+
+describe('Opportunities', () => {
+  const opportunity = {
+    id: 'runegraft:abc',
+    kind: 'runegraft' as const,
+    title: 'Runegraft of the Fortress ×3 → random Runegraft',
+    item: { name: 'Runegraft of the Fortress', path: 'Metadata/Items/Currency/RunegraftX', category: 'Currency', named: true },
+    legs: [
+      { side: 'buy' as const, label: 'Fortress', item: null, quantity: 3, price: 10, quote: 'chaos' as const },
+      { side: 'expect' as const, label: 'Random', item: null, quantity: 1, price: 45, quote: 'chaos' as const },
+    ],
+    cost_chaos: 30,
+    return_chaos: 45,
+    profit_chaos: 15,
+    margin_share: 0.5,
+    gold_per_cycle: 30,
+    chaos_per_1k_gold: 500,
+    cycles_per_hour: 10,
+    chaos_per_hour_ceiling: 150,
+    basis: 'ev_estimate' as const,
+    eligible: true,
+    rank: 2,
+    warnings: ['EV is an estimate', 'Gold fee unknown'],
+    detail: { market_id: 'abc' },
+  };
+
+  it('shows a row in Chaos or in Divines', () => {
+    const row = opportunityRow(opportunity);
+    assert.deepEqual(
+      [row.rank, row.kind, row.cost, row.ret, row.profit, row.marginPct, row.cycles, row.ceiling, row.basis, row.warningCount, row.loss],
+      ['2', 'Runegraft 3:1', '30.0c', '45.0c', '15.0c', '50%', '10/h', '150.0c/h', 'EV est.', 2, false],
+    );
+    assert.equal(row.category, 'Buy 3 at 10.0c · get one worth ≈ 45.0c');
+    const div = opportunityRow(opportunity, 'divine', 300);
+    assert.deepEqual([div.cost, div.ceiling], ['0.10 div', '0.50 div/h']);
+    assert.equal(opportunityRow({ ...opportunity, cycles_per_hour: null, chaos_per_hour_ceiling: null }).ceiling, DASH);
+  });
+
+  it('formats money and legs', () => {
+    assert.deepEqual([moneyText(12345, 'chaos', null), moneyText(-2.5, 'chaos', null), moneyText(10, 'divine', null)], ['12.3kc', '-2.5c', DASH]);
+    assert.equal(
+      legsText([
+        { side: 'buy', label: '', item: null, quantity: 1, price: 30, quote: 'chaos' },
+        { side: 'sell', label: '', item: null, quantity: 1, price: 0.2, quote: 'divine' },
+      ]),
+      'Buy at 30.0c · sell at 5.0 per div',
+    );
+  });
+
+  it('links flips and trades to the Flipping page with the league and window', () => {
+    const state = { league: 'Mirage', window: '24h' };
+    assert.equal(navSearch(state), '?league=Mirage&window=24h');
+    assert.equal(navSearch({ league: '', window: '1h' }), '');
+    assert.equal(flippingHref({ ...opportunity, kind: 'flip_divine' }, state), '/flipping?league=Mirage&window=24h&quote=divine&market=abc');
+    assert.equal(flippingHref({ ...opportunity, kind: 'flip_chaos' }, state), '/flipping?league=Mirage&window=24h&market=abc');
+    assert.equal(
+      flippingHref({ ...opportunity, kind: 'trade_c_d', detail: { buy_market_id: 'xyz' } }, state),
+      '/flipping?league=Mirage&window=24h&quote=flip&market=xyz',
+    );
+    assert.equal(flippingHref(opportunity, state), null);
+  });
+
+  it('keeps its state in the address bar without the dashboard-only parameters', () => {
+    const state = { ...OPP_DEFAULT_STATE, league: 'Mirage', kinds: 'flip_chaos,runegraft', min_profit: '2.5', page: 2, open: 'runegraft:abc', unit: 'divine' as const };
+    const search = searchFromOppState(state);
+    assert.equal(search, '?league=Mirage&kinds=flip_chaos%2Crunegraft&min_profit=2.5&page=2&open=runegraft%3Aabc&unit=divine');
+    assert.deepEqual(oppStateFromSearch(search), state);
+    for (const key of ['quote', 'market', 'history', 'offset']) assert.ok(!(key in OPP_DEFAULT_STATE), key);
+    assert.deepEqual(oppStateFromSearch('?kinds=runegraft,nope,flip_chaos&min_profit=x&sort=rank&page=-1'), {
+      ...OPP_DEFAULT_STATE,
+      kinds: 'flip_chaos,runegraft',
+    });
+    assert.equal(oppStateFromSearch('?kinds=flip_chaos,flip_divine,trade_c_d,runegraft').kinds, '');
+    assert.deepEqual(selectedKinds(''), ['flip_chaos', 'flip_divine', 'trade_c_d', 'runegraft']);
+  });
+
+  it('builds the API query', () => {
+    assert.deepEqual(opportunityQuery({ ...OPP_DEFAULT_STATE, league: 'Mirage', page: 1, kinds: 'runegraft', min_profit: '5', q: 'fort' }, 50), {
+      league: 'Mirage',
+      window: '1h',
+      scope: 'eligible',
+      sort: 'ceiling',
+      limit: '50',
+      offset: '50',
+      q: 'fort',
+      kinds: 'runegraft',
+      min_profit: '5',
     });
   });
 });

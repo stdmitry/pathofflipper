@@ -109,7 +109,7 @@ describe('dashboard against the Mirage fixture (PostgreSQL)', { skip }, () => {
 
   describe('static files', () => {
     it('serves the page with a strict content security policy', async () => {
-      const response = await fetch(`${base}/`);
+      const response = await fetch(`${base}/flipping`);
       assert.equal(response.status, 200);
       assert.match(response.headers.get('content-type')!, /^text\/html/);
       assert.match(response.headers.get('content-security-policy')!, /script-src 'self'/);

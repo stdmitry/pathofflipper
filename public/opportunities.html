@@ -3,57 +3,67 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Path of Flipper · Currency market screening</title>
+    <title>Path of Flipper · Opportunities</title>
     <link rel="stylesheet" href="/vendor/uplot-1.6.32/uPlot.min.css" />
     <link rel="stylesheet" href="/style.css" />
     <script src="/vendor/uplot-1.6.32/uPlot.iife.min.js" defer></script>
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/opportunities.js"></script>
   </head>
   <body>
     <header class="top">
       <div>
         <h1>Path of Flipper</h1>
-        <p class="subtitle">Path of Exile 1 · PC · currency exchange markets quoted in Chaos Orbs or Divine Orbs</p>
+        <p class="subtitle">Path of Exile 1 · PC · every kind of currency exchange opportunity, side by side</p>
       </div>
+      <nav class="tabs" aria-label="Views">
+        <a id="nav-opportunities" href="/" aria-current="page">Opportunities</a>
+        <a id="nav-flipping" href="/flipping">Flipping</a>
+      </nav>
       <div id="status" class="status" role="status" aria-live="polite">Checking data…</div>
     </header>
 
     <p class="notice">
       <strong>Historical screening, not live quotes.</strong>
-      Low and high are the cheapest and dearest prices paid in past trades, not prices you can buy or sell at now,
-      and the gap between them is not a spread you can capture. The rank orders markets by that gap relative to the
-      low price, times the amount traded per hour, times what a flip earns per 1,000 gold. It points to markets worth a
-      closer look, not to proven profit.
+      Flips and trades use the cheapest and dearest prices paid in past trades, so their profit is an upper bound, not
+      a spread you can capture. Runegraft conversions use an expected value: an average over many conversions, and any
+      single conversion can lose. The ranking multiplies profit per cycle by how many cycles the market traded per hour,
+      which is a ceiling, not an income forecast.
     </p>
     <ul id="problems" class="problems" hidden></ul>
 
     <main class="layout">
-      <section class="markets" aria-labelledby="markets-title">
-        <h2 id="markets-title" class="visually-hidden">Markets</h2>
+      <section class="markets" aria-labelledby="opportunities-title">
+        <h2 id="opportunities-title" class="visually-hidden">Opportunities</h2>
         <form id="controls" class="controls" role="search">
           <label>
             League
             <select id="league" name="league" disabled></select>
           </label>
           <fieldset class="segmented">
-            <legend>View</legend>
-            <label><input type="radio" name="quote" value="chaos" /> Chaos</label>
-            <label><input type="radio" name="quote" value="divine" /> Divine</label>
-            <label title="Buy for Chaos, then sell in bulk for Divines"><input type="radio" name="quote" value="flip" /> Chaos → Divine</label>
-          </fieldset>
-          <fieldset class="segmented">
             <legend>Window</legend>
             <label><input type="radio" name="window" value="1h" /> 1h</label>
             <label><input type="radio" name="window" value="24h" /> 24h</label>
           </fieldset>
+          <fieldset class="segmented">
+            <legend>Show in</legend>
+            <label><input type="radio" name="unit" value="chaos" /> Chaos</label>
+            <label><input type="radio" name="unit" value="divine" /> Divine</label>
+          </fieldset>
           <label class="search">
             Search
-            <input id="q" name="q" type="search" placeholder="Divine, scarab, …" autocomplete="off" maxlength="100" />
+            <input id="q" name="q" type="search" placeholder="Divine, scarab, runegraft…" autocomplete="off" maxlength="100" />
+          </label>
+          <label class="min-profit">
+            Min profit (c)
+            <input id="min-profit" name="min_profit" type="number" step="any" inputmode="decimal" placeholder="any" />
           </label>
           <label class="check">
             <input id="scope" type="checkbox" name="scope" />
-            Include ineligible markets
+            Include ineligible
           </label>
+          <fieldset id="kinds" class="chips">
+            <legend>Kinds</legend>
+          </fieldset>
         </form>
 
         <div class="table-wrap">
@@ -79,9 +89,9 @@
         </header>
         <fieldset class="segmented">
           <legend>History</legend>
-          <label><input type="radio" name="history" value="24h" /> 24h</label>
-          <label><input type="radio" name="history" value="7d" /> 7d</label>
-          <label><input type="radio" name="history" value="30d" /> 30d</label>
+          <label><input type="radio" name="chart" value="24h" /> 24h</label>
+          <label><input type="radio" name="chart" value="7d" /> 7d</label>
+          <label><input type="radio" name="chart" value="30d" /> 30d</label>
         </fieldset>
         <div id="detail-body"></div>
       </aside>

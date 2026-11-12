@@ -163,7 +163,8 @@ button {
 }
 
 .controls select,
-.controls input[type='search'] {
+.controls input[type='search'],
+.controls input[type='number'] {
   display: block;
   margin-top: 3px;
   padding: 6px 8px;
@@ -180,6 +181,131 @@ button {
 
 .search input {
   width: 220px;
+}
+
+.min-profit input {
+  width: 110px;
+}
+
+/* Page tabs: Opportunities and Flipping. */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+  margin-left: 16px;
+}
+
+.tabs a {
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.tabs a:hover {
+  background: var(--panel);
+}
+
+.tabs a[aria-current='page'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Kind filter chips on the Opportunities page. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.chips legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chips .chip {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 10px;
+  color: var(--text);
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chips .chip:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--selected);
+}
+
+.chips .chip:has(input:disabled) {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.kind {
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+}
+
+.basis-ev {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.basis-ev_estimate {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.warn-icon {
+  color: var(--warn);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.warnings {
+  margin: 8px 0;
+  padding: 8px 14px 8px 28px;
+  border-left: 4px solid var(--warn);
+  background: var(--bg);
+}
+
+table.ev {
+  width: 100%;
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+table.ev th,
+table.ev td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+table.ev .num {
+  text-align: right;
 }
 
 .check {

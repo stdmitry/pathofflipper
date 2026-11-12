@@ -43,7 +43,7 @@ describe('runegraftPrices (PostgreSQL)', { skip }, () => {
       // 2 Fortress for 90 Chaos: 45 each, Runegraft first.
       marketJson('Mirage', FORTRESS, CHAOS_PATH, ['2', '90']),
       marketJson('Mirage', CHAOS_PATH, DIVINE, ['300', '1']),
-      marketJson('Limey Whelps (PL86569)', CHAOS_PATH, FORTRESS, ['10', '1']),
+      marketJson('Limey Whelps (PL86569)', FORTRESS, CHAOS_PATH, ['1', '10']),
     ];
     const exchange = new FakeExchange(1);
     exchange.overrides.set(H0, { url: 'fake', status: 200, body: `{"next_change_id":${H0 + HOUR},"markets":[${markets.join(',')}]}` });
