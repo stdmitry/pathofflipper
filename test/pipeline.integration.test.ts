@@ -112,14 +112,16 @@ describe('pipeline tick (PostgreSQL)', { skip }, () => {
     assert.equal(items.rows[0]!.expected_profit, expected.ev - 3 * prices[0]!.buyPriceChaos);
   });
 
-  it('runs again for a new hour and keeps the earlier Runegraft runs', async () => {
+  it('runs again for a new hour and keeps only the latest Runegraft runs', async () => {
+    const before = await count(pool, 'runegraft_runs');
     const tick = await runPipelineTick(pool, jobsFor(runegraftExchange(4)), { now });
     assert.deepEqual(statuses(tick), { fetch: 'ok', parse: 'ok', metrics: 'ok', runegraft: 'ok', 'check-semantics': 'not-due' });
-    const { rows } = await pool.query<{ hours: number }>('SELECT count(DISTINCT as_of_hour)::int AS hours FROM runegraft_runs');
-    assert.equal(rows[0]!.hours, 2);
+    const { rows } = await pool.query<{ as_of: Date }>('SELECT DISTINCT as_of_hour AS as_of FROM runegraft_runs');
+    assert.deepEqual(rows.map((r) => r.as_of.getTime()), [(H0 + 3 * HOUR) * 1000]);
+    assert.equal(await count(pool, 'runegraft_runs'), before);
   });
 
-  it('replaces the runs of an hour when it is computed again', async () => {
+  it('replaces the runs when the same hour is computed again', async () => {
     const before = await count(pool, 'runegraft_runs');
     const tick = await runPipelineTick(pool, jobsFor(runegraftExchange(4)), { only: ['metrics', 'runegraft'], force: true, now });
     assert.deepEqual(statuses(tick), { metrics: 'ok', runegraft: 'ok' });

@@ -56,7 +56,7 @@ A tick runs these jobs in order ([#29](https://github.com/stdmitry/pathofflipper
 | `fetch` | every tick | `npm run fetch`: up to `--max-hours` (default `POE_MAX_HOURS` or 24) hours from the cursor |
 | `parse` | the newest stored hour changed | `npm run parse` |
 | `metrics` | the newest parsed hour or the calculation version changed | `npm run metrics` for Chaos and Divine |
-| `runegraft` | the Chaos snapshot or `data/runegraft-weights.json` changed | stores EV, break-even and recommended buy price per league and window in `runegraft_runs` |
+| `runegraft` | the Chaos snapshot or `data/runegraft-weights.json` changed | stores the latest EV, break-even and recommended buy price per league and window in `runegraft_runs`, replacing the previous ones |
 | `check-semantics` | first tick of each UTC day | `npm run check-semantics` over all stored data |
 
 Dependencies follow data, not exit codes: a job runs when its input changed since its last successful run, whatever happened to the jobs before it in this tick. If fetch fails after storing 5 hours, parse still parses them. A failed job is retried in the next tick. A tick with nothing new runs only fetch and records nothing. Only one tick runs at a time; another one exits 0 at once. A stage lock held by a manual run (for example `npm run fetch`) makes that job `busy` for the tick.

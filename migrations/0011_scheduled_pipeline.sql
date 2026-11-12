@@ -29,8 +29,8 @@ CREATE TABLE job_runs (
 );
 CREATE INDEX job_runs_job_started_at ON job_runs (job, started_at DESC);
 
--- Runegraft 3:1 conversion EV and recommended buy price, per league, window and Chaos snapshot hour. Unlike
--- market_metrics, every hour is kept, so the recommended price has a history. Rerunning an hour replaces it.
+-- Runegraft 3:1 conversion EV and recommended buy price per league and window, from the current Chaos metrics snapshot.
+-- Like market_metrics, only the latest computation is kept: every run replaces all rows.
 CREATE TABLE runegraft_runs (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   realm text NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE runegraft_runs (
   priced_outcomes smallint NOT NULL,
   unknown_outcomes smallint NOT NULL,
   computed_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (realm, league_id, window_hours, as_of_hour)
+  UNIQUE (realm, league_id, window_hours)
 );
 
 CREATE TABLE runegraft_run_items (

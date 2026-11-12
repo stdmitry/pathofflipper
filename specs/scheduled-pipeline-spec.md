@@ -7,7 +7,7 @@ Status: implemented (issue #29).
 Every stage is a separate CLI run by hand or by a cron line such as `npm run fetch; npm run parse; npm run metrics` (README). This has four problems:
 
 - **No dependencies.** Cron does not know that metrics need parsed hours, or that the Runegraft price needs the Chaos metrics snapshot. A fixed time offset can run a stage on old data, and a chain joined with `;` runs every stage even when nothing new arrived.
-- **No stored result for Runegraft.** The recommended Runegraft buy price is computed on every `npm run runegraft` call and every `/api/opportunities` request. It has no history, and it can't be shown in a status view or compared over time.
+- **No stored result for Runegraft.** The recommended Runegraft buy price is computed on every `npm run runegraft` call and every `/api/opportunities` request. It isn't stored, so it can't be read without recomputing it or shown in a status view.
 - **No place for new jobs.** The audits (`specs/currency-arbitrage-audit-report.md` E-1…E-5, `specs/poe_market_making_audit.md`) add more derived calculations, such as effective price tables, closed triangles and market-making quotes. Each would need its own cron line and its own guess about timing.
 - **No visibility.** Only fetch records its last error (`ingestion_cursors`). Nothing records whether parse, metrics or Runegraft last ran, how long they took or why they failed. Issue #8 asks for this.
 
@@ -63,7 +63,7 @@ CREATE TABLE runegraft_runs (
   priced_outcomes smallint NOT NULL,
   unknown_outcomes smallint NOT NULL,
   computed_at   timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (realm, league_id, window_hours, as_of_hour)
+  UNIQUE (realm, league_id, window_hours)
 );
 
 CREATE TABLE runegraft_run_items (
@@ -77,7 +77,7 @@ CREATE TABLE runegraft_run_items (
 );
 ```
 
-Unlike `market_metrics`, runs are **kept**: one row per league, window and hour, so the recommended price has a history. Rerunning the same hour replaces that hour's runs (delete the hour's rows and insert, in one transaction).
+Like `market_metrics`, only the **latest** computation is kept: one row per league and window. Every run deletes all rows and inserts the new ones in one transaction. No history is stored.
 
 Follow-up, not in this issue: the `runegraft` provider of `/api/opportunities` and `npm run runegraft` read the stored run when its `as_of_hour` matches the Chaos snapshot, and compute live otherwise (for example, with non-default `--margin`).
 
@@ -198,12 +198,12 @@ Only runs that did something (`ok`, `failed`, `busy`, `timeout`, `interrupted`) 
   - a second tick with no new hour writes no `job_runs` rows
   - a concurrent tick exits 0 without running jobs
   - a manual fetch holding the ingest lock gives `busy`
-  - the Runegraft run matches `npm run runegraft` output for the same snapshot, and rerunning an hour replaces its run
+  - the Runegraft run matches `npm run runegraft` output for the same snapshot, and every run replaces the stored ones
 
 ## Acceptance criteria
 
 - [ ] `npm run pipeline` and `npm run scheduler` run fetch → parse → metrics → runegraft by data watermarks
-- [ ] Runegraft EV, break-even and recommended price are stored per league, window and hour, with history kept
+- [ ] Runegraft EV, break-even and recommended price are stored per league and window; only the latest computation is kept
 - [ ] `job_state` and `job_runs` record every non-skipped run; `/api/status` shows per-job state
 - [ ] Idle ticks are no-ops; overlapping ticks never run a job twice
 - [ ] Adding a job takes one module and one registry entry, with no change to the runner
@@ -214,4 +214,3 @@ Only runs that did something (`ok`, `failed`, `busy`, `timeout`, `interrupted`) 
 
 1. Should Runegraft runs use only the default margin and min price, or a small set of margins? The proposal is defaults only, with others computed live.
 2. Should a metrics backlog after downtime be backfilled automatically, which costs one metrics run per hour? The proposal is no.
-3. Should old `runegraft_runs` be kept forever? At about 2 leagues × 2 windows × 24 hours a day, that is about 35k rows a year, so the proposal is to keep them.

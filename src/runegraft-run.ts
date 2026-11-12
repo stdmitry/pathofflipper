@@ -53,8 +53,8 @@ export interface RunegraftRunSummary {
 
 /**
  * Computes the Runegraft conversion EV, break-even and recommended buy price for every public league with a Runegraft
- * Chaos market in the stored Chaos snapshot, for each window, and stores them. A rerun of the same snapshot hour replaces
- * that hour's rows; other hours are kept. Same calculation as `npm run runegraft`.
+ * Chaos market in the stored Chaos snapshot, for each window, and replaces the stored ones: only the latest computation
+ * is kept. Same calculation as `npm run runegraft`.
  */
 export async function computeRunegraftRuns(pool: pg.Pool, options: RunegraftRunOptions): Promise<RunegraftRunSummary> {
   const logger = options.logger ?? silentLogger;
@@ -122,7 +122,7 @@ export async function computeRunegraftRuns(pool: pg.Pool, options: RunegraftRunO
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('DELETE FROM runegraft_runs WHERE realm = $1 AND as_of_hour = to_timestamp($2)', [REALM, snap.asOfHour]);
+      await client.query('DELETE FROM runegraft_runs WHERE realm = $1', [REALM]);
       for (const { items: runItems, ...run } of runs) {
         const inserted = await client.query<{ id: string }>(
           `INSERT INTO runegraft_runs (realm, league_id, window_hours, as_of_hour, metric_run_id, weights_sha256, margin,
