@@ -91,7 +91,7 @@ ORDER BY m.activity_rank LIMIT 20;
 
 Prices come from the Chaos metrics snapshot, so run `npm run metrics` first. That snapshot is hourly history, not an order book. The buy price is the lowest executed Chaos price in the window (`--window 1|24`, default 24), and an outcome is valued at the volume-weighted price. Available quantity is not in the data and is reported as unknown.
 
-Outcome probabilities live in [`data/runegraft-weights.json`](./data/runegraft-weights.json). No community measurement was found, so every probability is `null` (unknown) and EV is reported as unknown. Fill in measured probabilities, or pass `--assume-uniform` to split the unassigned probability equally among the unknown outcomes. Whenever probabilities are unknown, they don't sum to 1, or an outcome has no price, EV is labelled an estimate. The spec assumes the outcome doesn't depend on which Runegrafts go in; that is not verified yet.
+Outcome probabilities live in [`data/runegraft-weights.json`](./data/runegraft-weights.json). They are the shares observed in 10,111 conversions on patch 3.28, from [this r/pathofexile thread](https://www.reddit.com/r/pathofexile/comments/1rz0vxq/runegrafts_weight_from_30333_runes_328_updated/). Runegraft of the Angler was never observed, so it counts as 0 even though it is very valuable. Runegraft of the Gauche is missing from that data and stays `null` (unknown). Update the file as better data appears, or pass `--assume-uniform` to split the unassigned probability equally among the unknown outcomes. Whenever probabilities are unknown, they don't sum to 1, or an outcome has no price, EV is labelled an estimate. The spec assumes the outcome doesn't depend on which Runegrafts go in; that is not verified yet.
 
 ## Dashboard
 

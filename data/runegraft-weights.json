@@ -1,102 +1,142 @@
 {
-  "note": "Outcome probabilities of the random Runegraft 3:1 vendor recipe. null means unknown: no community measurement was found when this file was created (2026-11-12). Replace null with a measured probability (0..1) and record the source. Assumes the outcome does not depend on the input Runegrafts; that is unverified.",
-  "source": null,
+  "note": "Outcome probabilities of the random Runegraft 3:1 vendor recipe: observed / sample_outcomes from the source thread (patch 3.28). null means the Runegraft is not in that data (unknown, not zero). Runegraft of the Angler was never observed (probability 0, tier 0 in the thread), so a very rare, very expensive outcome is missing from EV. estimated_weight is the thread author's inferred spawn weight, kept for reference; EV uses the observed share. Assumes the outcome does not depend on the input Runegrafts; that is unverified.",
+  "source": "https://www.reddit.com/r/pathofexile/comments/1rz0vxq/runegrafts_weight_from_30333_runes_328_updated/",
+  "source_description": "Runegrafts weight from 30333 runes (3.28, updated), r/pathofexile; table pasted by the user on 2026-11-12",
+  "sample_outcomes": 10111,
   "updated_at": "2026-11-12",
   "weights": [
     {
       "name": "Runegraft of Loyalty",
       "path": "Metadata/Items/Currency/RunegraftAilmentRedirect",
-      "probability": null
+      "observed": 183,
+      "probability": 0.018099,
+      "estimated_weight": "10"
     },
     {
       "name": "Runegraft of the Fortress",
       "path": "Metadata/Items/Currency/RunegraftAttributeGlobalDefences",
-      "probability": null
+      "observed": 338,
+      "probability": 0.033429,
+      "estimated_weight": "20"
     },
     {
       "name": "Runegraft of the Bound",
       "path": "Metadata/Items/Currency/RunegraftBootsGloves",
-      "probability": null
+      "observed": 487,
+      "probability": 0.048165,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of the Warp",
       "path": "Metadata/Items/Currency/RunegraftBuffScaling",
-      "probability": null
+      "observed": 165,
+      "probability": 0.016319,
+      "estimated_weight": "10"
     },
     {
       "name": "Runegraft of Refraction",
       "path": "Metadata/Items/Currency/RunegraftChainMana",
-      "probability": null
+      "observed": 342,
+      "probability": 0.033825,
+      "estimated_weight": "20"
     },
     {
       "name": "Runegraft of Connection",
       "path": "Metadata/Items/Currency/RunegraftConnection",
-      "probability": null
+      "observed": 567,
+      "probability": 0.056078,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of Consecration",
       "path": "Metadata/Items/Currency/RunegraftConsecratedGround",
-      "probability": null
+      "observed": 364,
+      "probability": 0.036,
+      "estimated_weight": "20"
     },
     {
       "name": "Runegraft of Time",
       "path": "Metadata/Items/Currency/RunegraftCooldownRefresh",
-      "probability": null
+      "observed": 186,
+      "probability": 0.018396,
+      "estimated_weight": "10"
     },
     {
       "name": "Runegraft of Restitching",
       "path": "Metadata/Items/Currency/RunegraftCritRecoup",
-      "probability": null
+      "observed": 536,
+      "probability": 0.053012,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of the Jeweller",
       "path": "Metadata/Items/Currency/RunegraftDamagePerSocket",
-      "probability": null
+      "observed": 560,
+      "probability": 0.055385,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of the Agile",
       "path": "Metadata/Items/Currency/RunegraftElusive",
-      "probability": null
+      "observed": 459,
+      "probability": 0.045396,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of the Angler",
       "path": "Metadata/Items/Currency/RunegraftFishing",
-      "probability": null
+      "observed": 0,
+      "probability": 0.0,
+      "estimated_weight": null
     },
     {
       "name": "Runegraft of the Sinistral",
       "path": "Metadata/Items/Currency/RunegraftFlatOffhandAttackTime",
-      "probability": null
+      "observed": 540,
+      "probability": 0.053407,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of Rallying",
       "path": "Metadata/Items/Currency/RunegraftFortificationBanner",
-      "probability": null
+      "observed": 375,
+      "probability": 0.037088,
+      "estimated_weight": "20"
     },
     {
       "name": "Runegraft of Fury",
       "path": "Metadata/Items/Currency/RunegraftLifeFlaskRage",
-      "probability": null
+      "observed": 28,
+      "probability": 0.002769,
+      "estimated_weight": "1-2"
     },
     {
       "name": "Runegraft of Quaffing",
       "path": "Metadata/Items/Currency/RunegraftLifeFromManaFlasks",
-      "probability": null
+      "observed": 526,
+      "probability": 0.052023,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of the River",
       "path": "Metadata/Items/Currency/RunegraftLowLifeRestore",
-      "probability": null
+      "observed": 537,
+      "probability": 0.05311,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of the Combatant",
       "path": "Metadata/Items/Currency/RunegraftMatchedAttackDamage",
-      "probability": null
+      "observed": 522,
+      "probability": 0.051627,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of the Novamark",
       "path": "Metadata/Items/Currency/RunegraftNovaMarkedTarget",
-      "probability": null
+      "observed": 358,
+      "probability": 0.035407,
+      "estimated_weight": "20"
     },
     {
       "name": "Runegraft of the Gauche",
@@ -106,62 +146,86 @@
     {
       "name": "Runegraft of Rotblood",
       "path": "Metadata/Items/Currency/RunegraftPoisonConversion",
-      "probability": null
+      "observed": 44,
+      "probability": 0.004352,
+      "estimated_weight": "2-3"
     },
     {
       "name": "Runegraft of Blasphemy",
       "path": "Metadata/Items/Currency/RunegraftRandomCurse",
-      "probability": null
+      "observed": 532,
+      "probability": 0.052616,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of Resurgence",
       "path": "Metadata/Items/Currency/RunegraftResurgence",
-      "probability": null
+      "observed": 338,
+      "probability": 0.033429,
+      "estimated_weight": "20"
     },
     {
       "name": "Runegraft of the Soulwick",
       "path": "Metadata/Items/Currency/RunegraftSouls",
-      "probability": null
+      "observed": 56,
+      "probability": 0.005539,
+      "estimated_weight": "3"
     },
     {
       "name": "Runegraft of the Witchmark",
       "path": "Metadata/Items/Currency/RunegraftSpellLifeCost",
-      "probability": null
+      "observed": 51,
+      "probability": 0.005044,
+      "estimated_weight": "3"
     },
     {
       "name": "Runegraft of the Spellbound",
       "path": "Metadata/Items/Currency/RunegraftSpellbound",
-      "probability": null
+      "observed": 175,
+      "probability": 0.017308,
+      "estimated_weight": "10"
     },
     {
       "name": "Runegraft of Suffering",
       "path": "Metadata/Items/Currency/RunegraftSuffering",
-      "probability": null
+      "observed": 351,
+      "probability": 0.034715,
+      "estimated_weight": "20"
     },
     {
       "name": "Runegraft of Gemcraft",
       "path": "Metadata/Items/Currency/RunegraftSupportLevels",
-      "probability": null
+      "observed": 39,
+      "probability": 0.003857,
+      "estimated_weight": "2-3"
     },
     {
       "name": "Runegraft of the Imbued",
       "path": "Metadata/Items/Currency/RunegraftTinctures",
-      "probability": null
+      "observed": 538,
+      "probability": 0.053209,
+      "estimated_weight": "30"
     },
     {
       "name": "Runegraft of Treachery",
       "path": "Metadata/Items/Currency/RunegraftTreacherousAuras",
-      "probability": null
+      "observed": 370,
+      "probability": 0.036594,
+      "estimated_weight": "20"
     },
     {
       "name": "Runegraft of Stability",
       "path": "Metadata/Items/Currency/RunegraftUnexciting",
-      "probability": null
+      "observed": 18,
+      "probability": 0.00178,
+      "estimated_weight": "1"
     },
     {
       "name": "Runegraft of Bellows",
       "path": "Metadata/Items/Currency/RunegraftWarcrySpeed",
-      "probability": null
+      "observed": 526,
+      "probability": 0.052023,
+      "estimated_weight": "30"
     }
   ]
 }

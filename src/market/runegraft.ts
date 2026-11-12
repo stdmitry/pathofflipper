@@ -71,7 +71,8 @@ export interface EvResult {
   warnings: string[];
 }
 
-const PROBABILITY_TOLERANCE = 1e-6;
+/** Probabilities in the weights file are rounded, so their sum may miss 1 by this much. */
+const PROBABILITY_TOLERANCE = 1e-4;
 
 /** Validates a parsed weights file; throws on anything that would silently change EV. */
 export function parseWeights(data: unknown): RunegraftWeight[] {
