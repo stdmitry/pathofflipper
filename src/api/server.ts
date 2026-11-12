@@ -11,9 +11,12 @@ import {
   parseHistoryParams,
   parseLeaguesParams,
   parseMarketListParams,
+  parseOpportunityListParams,
   parseStatusParams,
 } from './params.ts';
 import { listFlips } from './flips.ts';
+import { loadWeights, type RunegraftWeight } from '../market/runegraft.ts';
+import { listOpportunities } from '../opportunities/index.ts';
 import { collectorStatus, dataVersion, listLeagues, listMarkets, marketHistory, NotFoundError } from './queries.ts';
 
 export interface ApiOptions {
@@ -22,10 +25,21 @@ export interface ApiOptions {
   now?: () => Date;
   /** Cached responses kept at most; the whole cache is dropped when committed data changes. */
   cacheEntries?: number;
+  /** Runegraft outcome probabilities; read from data/runegraft-weights.json on first use when not given. */
+  runegraftWeights?: readonly RunegraftWeight[];
 }
 
 /** The dashboard's static files. */
 export const PUBLIC_DIR = path.join(import.meta.dirname, '..', '..', 'public');
+
+/** Pages served at a path of their own: Opportunities is the landing page, the flipping dashboard has its own path. */
+const PAGES: Record<string, string> = { '/': '/opportunities.html', '/flipping': '/flipping.html' };
+
+/**
+ * Parameters only the flipping dashboard uses. Links to it from before it moved to /flipping carry at least one when
+ * they open a view, a market or a page, so a request for / with one is redirected there.
+ */
+const DASHBOARD_ONLY_PARAMS = ['quote', 'market', 'history', 'offset'];
 
 const STATIC_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -74,6 +88,8 @@ export function createApiServer(pool: pg.Pool, options: ApiOptions = {}): http.S
   const logger = options.logger ?? silentLogger;
   const now = options.now ?? (() => new Date());
   const maxEntries = options.cacheEntries ?? 500;
+  let weights: Promise<readonly RunegraftWeight[]> | undefined = options.runegraftWeights && Promise.resolve(options.runegraftWeights);
+  const runegraftWeights = () => (weights ??= loadWeights());
   let cacheVersion = '';
   const cache = new Map<string, { etag: string; body: string }>();
 
@@ -81,6 +97,11 @@ export function createApiServer(pool: pg.Pool, options: ApiOptions = {}): http.S
     { pattern: /^\/api\/leagues$/, cached: true, handler: () => (url, at) => (parseLeaguesParams(url.searchParams), listLeagues(pool, at)) },
     { pattern: /^\/api\/markets$/, cached: true, handler: () => (url, at) => listMarkets(pool, parseMarketListParams(url.searchParams), at) },
     { pattern: /^\/api\/flips$/, cached: true, handler: () => (url, at) => listFlips(pool, parseFlipListParams(url.searchParams), at) },
+    {
+      pattern: /^\/api\/opportunities$/,
+      cached: true,
+      handler: () => async (url, at) => listOpportunities(pool, parseOpportunityListParams(url.searchParams), at, await runegraftWeights()),
+    },
     {
       pattern: /^\/api\/markets\/([^/]+)\/history$/,
       cached: true,
@@ -102,6 +123,9 @@ export function createApiServer(pool: pg.Pool, options: ApiOptions = {}): http.S
     const route = routes.map((r) => ({ r, match: url.pathname.match(r.pattern) })).find((x) => x.match);
     if (!route) {
       if (url.pathname.startsWith('/api/')) throw new HttpError(404, 'not_found', `No endpoint ${url.pathname}`);
+      if (url.pathname === '/' && DASHBOARD_ONLY_PARAMS.some((key) => url.searchParams.has(key))) {
+        return { status: 302, body: '', headers: { Location: `/flipping${url.search}`, 'Cache-Control': 'no-cache' } };
+      }
       return serveStatic(url.pathname);
     }
     const handler = route.r.handler(route.match!);
@@ -145,7 +169,7 @@ export function createApiServer(pool: pg.Pool, options: ApiOptions = {}): http.S
       .then(({ status, body, headers }) => {
         res.writeHead(status, {
           ...headers,
-          ...(status === 304
+          ...(status === 304 || status === 302
             ? {}
             : { 'Content-Type': 'application/json; charset=utf-8', ...headers, 'Content-Length': String(Buffer.byteLength(body)) }),
         });
@@ -156,13 +180,13 @@ export function createApiServer(pool: pg.Pool, options: ApiOptions = {}): http.S
 }
 
 /**
- * Serves a file below PUBLIC_DIR: `/` is the dashboard, other paths map to files with a known type. Anything that
- * resolves outside the directory, or has another type, is not found.
+ * Serves a file below PUBLIC_DIR: `/` and `/flipping` are the two pages (PAGES), other paths map to files with a known
+ * type. Anything that resolves outside the directory, or has another type, is not found.
  */
 async function serveStatic(pathname: string): Promise<Reply> {
   let relative: string;
   try {
-    relative = decodeURIComponent(pathname === '/' ? '/index.html' : pathname);
+    relative = PAGES[pathname] ?? decodeURIComponent(pathname);
   } catch {
     throw new HttpError(404, 'not_found', 'Not found');
   }

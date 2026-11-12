@@ -1,6 +1,7 @@
 import { REALM } from '../config.ts';
 import { WINDOWS, type WindowHours } from '../market/metrics.ts';
 import { type Quote, QUOTE_ITEMS, QUOTE_NAMES } from '../market/quotes.ts';
+import { OPPORTUNITY_KINDS, type OpportunityKind, PLANNED_KINDS } from '../opportunities/types.ts';
 
 /** A request the API refuses with 400, naming the offending parameter. */
 export class InvalidParameterError extends Error {
@@ -50,6 +51,25 @@ export interface FlipListParams {
   window: WindowHours;
   scope: 'eligible' | 'all';
   sort: FlipSort;
+  order: 'asc' | 'desc';
+  q: string | undefined;
+  limit: number;
+  offset: number;
+}
+
+export const OPPORTUNITY_SORTS = ['ceiling', 'profit', 'margin_pct', 'per_gold', 'cycles', 'name'] as const;
+export type OpportunitySort = (typeof OPPORTUNITY_SORTS)[number];
+
+export interface OpportunityListParams {
+  realm: typeof REALM;
+  league: string;
+  window: WindowHours;
+  /** Kinds to list; all served kinds by default. */
+  kinds: OpportunityKind[];
+  scope: 'eligible' | 'all';
+  /** Minimum profit per cycle in Chaos. */
+  minProfit: number | undefined;
+  sort: OpportunitySort;
   order: 'asc' | 'desc';
   q: string | undefined;
   limit: number;
@@ -106,6 +126,15 @@ class Query {
     }
     return n;
   }
+
+  decimal(name: string): number | undefined {
+    const value = this.text(name);
+    if (value === undefined) return undefined;
+    if (!/^-?\d{1,9}(\.\d{1,6})?$/.test(value)) {
+      throw new InvalidParameterError(name, `Parameter "${name}" must be a decimal number; got "${value}"`);
+    }
+    return Number(value);
+  }
 }
 
 function realm(query: Query): typeof REALM {
@@ -158,6 +187,42 @@ export function parseFlipListParams(params: URLSearchParams): FlipListParams {
     limit: query.int('limit', 1, MAX_LIMIT, 50),
     offset: query.int('offset', 0, MAX_OFFSET, 0),
   };
+}
+
+export function parseOpportunityListParams(params: URLSearchParams): OpportunityListParams {
+  const query = new Query(params, ['realm', 'league', 'window', 'kinds', 'scope', 'min_profit', 'sort', 'order', 'q', 'limit', 'offset']);
+  const windowLabels = WINDOWS.map((hours) => `${hours}h`);
+  const window = Number(query.oneOf('window', windowLabels, '1h').slice(0, -1)) as WindowHours;
+  const sort = query.oneOf('sort', OPPORTUNITY_SORTS, 'ceiling');
+  return {
+    realm: realm(query),
+    league: query.text('league', true),
+    window,
+    kinds: parseKinds(query.text('kinds')),
+    scope: query.oneOf('scope', ['eligible', 'all'], 'eligible'),
+    minProfit: query.decimal('min_profit'),
+    sort,
+    order: query.oneOf('order', ['asc', 'desc'], sort === 'name' ? 'asc' : 'desc'),
+    q: query.text('q'),
+    limit: query.int('limit', 1, MAX_LIMIT, 50),
+    offset: query.int('offset', 0, MAX_OFFSET, 0),
+  };
+}
+
+/** A comma list of kinds; planned kinds are refused with the phase that adds them. */
+function parseKinds(value: string | undefined): OpportunityKind[] {
+  if (value === undefined) return [...OPPORTUNITY_KINDS];
+  const kinds = new Set<OpportunityKind>();
+  for (const kind of value.split(',')) {
+    if (kind in PLANNED_KINDS) {
+      throw new InvalidParameterError('kinds', `Kind "${kind}" is not implemented yet (${PLANNED_KINDS[kind as keyof typeof PLANNED_KINDS]})`);
+    }
+    if (!(OPPORTUNITY_KINDS as readonly string[]).includes(kind)) {
+      throw new InvalidParameterError('kinds', `Parameter "kinds" takes a comma list of ${OPPORTUNITY_KINDS.join(', ')}; got "${kind}"`);
+    }
+    kinds.add(kind as OpportunityKind);
+  }
+  return OPPORTUNITY_KINDS.filter((k) => kinds.has(k));
 }
 
 export function parseHistoryParams(params: URLSearchParams): HistoryParams {

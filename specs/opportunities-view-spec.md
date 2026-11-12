@@ -1,6 +1,6 @@
 # Opportunities view
 
-Status: proposed, 2026-11-12. Not yet implemented.
+Status: phase 1 implemented, 2026-11-12 ([#27](https://github.com/stdmitry/pathofflipper/issues/27)). Phases 2–4 are open.
 
 ## Goal
 
@@ -8,7 +8,7 @@ The dashboard at `/` screens one kind of opportunity: flipping on the currency e
 
 This spec adds an **Opportunities** page: one list of every kind of opportunity, in the same units and with the same caveats, so a player can compare them and pick what to do next.
 
-**Opportunities becomes the landing page (`/`). The existing dashboard moves to `/flipping`** under a "Flipping" tab. It keeps its query parameters, columns, ranking and detail panel. The only change to it is a shared top navigation bar linking the two pages. Old dashboard links keep working: a request to `/` that carries any dashboard parameter (`quote`, `scope`, `open`, `history`, …) redirects with 302 to `/flipping` with the same query string.
+**Opportunities becomes the landing page (`/`). The existing dashboard moves to `/flipping`** under a "Flipping" tab. It keeps its query parameters, columns, ranking and detail panel. The only change to it is a shared top navigation bar linking the two pages. Old dashboard links keep working: a request to `/` that carries a parameter only the dashboard uses (`quote`, `market`, `history` or `offset`) redirects with 302 to `/flipping` with the same query string.
 
 ## Definitions
 
@@ -46,7 +46,8 @@ interface Opportunity {
   title: string;                 // "Divine Orb", "Runegraft of the Fortress ×3 → random Runegraft"
   item: ItemJson | null;         // main item, for search and the item cell
   /** What is bought and sold per cycle (one flip, one conversion, one craft). */
-  legs: { side: 'buy' | 'sell' | 'expect'; item: ItemJson; quantity: number; price: RationalJson; quote: 'chaos' | 'divine' }[];
+  /** price is quote units per unit; item is null for a random outcome. */
+  legs: { side: 'buy' | 'sell' | 'expect'; label: string; item: ItemJson | null; quantity: number; price: number; quote: 'chaos' | 'divine' }[];
   /** All money values are Chaos per cycle; Divine legs are converted at the window's Chaos/Divine rate. */
   cost_chaos: number;
   return_chaos: number;          // sale value, or expected value for a random outcome
@@ -88,7 +89,7 @@ Every number is an upper bound. The page says so in the column header tooltip an
 
 Only **eligible** rows are listed by default:
 
-- Flips and trades use the existing eligibility rules, including `held` / `moving`.
+- Flips and trades use the existing eligibility rules, including `held` / `moving`. A flip also needs a price range (high above low). The Chaos/Divine market is listed once, as the Divine Orb Chaos flip; its Divine side is the same market.
 - Runegraft rows use `findOpportunities`: buy price strictly below `recommendedBuyPrice`, and the input market passes the same coverage and persistence thresholds.
 
 With "Include ineligible", other rows are shown, unranked and with a reason in `warnings`.
@@ -102,7 +103,7 @@ This replaces neither the dashboard's score nor `#7`. When fill-time estimates l
 | Parameter | Values | Default |
 |---|---|---|
 | `league` | league name | required |
-| `window` | `1`, `24` | `1` |
+| `window` | `1h`, `24h` | `1h` |
 | `kinds` | comma list of kind ids | all implemented kinds |
 | `scope` | `eligible`, `all` | `eligible` |
 | `q` | search text (≤100 chars) | none |
@@ -125,19 +126,17 @@ The endpoint is cached like the other data routes: invalidated by `dataVersion`,
 
 ```
 src/opportunities/
-  types.ts        Opportunity, OpportunityKind, provider interface
-  flips.ts        flip_chaos / flip_divine from the market_metrics snapshots
-  trades.ts       trade_c_d (reuses listFlips' query and crossFlip), trade_d_c later
-  runegraft.ts    wraps runegraftPrices + expectedValue + findOpportunities
-  recipes.ts      phase 3
-  index.ts        listOpportunities: run the requested providers in parallel, merge, filter, sort, paginate
+  types.ts        Opportunity, OpportunityKind, the planned kinds
+  flips.ts        flip_chaos / flip_divine from /api/markets rows, trade_c_d from /api/flips rows
+  runegraft.ts    wraps expectedValue + recommendedBuyPrice over runegraftPrices
+  index.ts        listOpportunities: build every kind, rank, filter, sort, paginate
 src/api/params.ts  parseOpportunityListParams
 src/api/server.ts  route /api/opportunities
 ```
 
-Each provider has the signature `(pool, { leagueId, window, scope }, context) => Promise<Opportunity[]>`. `context` holds the two snapshots and the Chaos/Divine rate, loaded once per request.
+Providers are pure functions over rows the existing queries already return: `listMarkets` for both quotes and `listFlips`, each called once per request with `scope=all` and no limit, plus `runegraftPrices`. Every kind is always built, so `meta.counts` covers kinds that are filtered out.
 
-To feed `trades.ts`, refactor `listFlips` into a function that returns candidates plus a thin HTTP-shaping wrapper. `/api/flips` must return byte-identical responses before and after; the existing integration tests check this.
+`listFlips` and `listMarkets` are reused unchanged, so `/api/flips` and `/api/markets` keep their responses.
 
 The Runegraft weights load once at server start through `loadWeights`. An invalid file fails startup, the same as the CLI. Settings that are CLI flags today (margin 30%, min outcome price 20c, no uniform assumption) become constants for the page in phase 1.
 

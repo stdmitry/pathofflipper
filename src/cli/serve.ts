@@ -3,6 +3,7 @@ import pg from 'pg';
 import { createApiServer } from '../api/server.ts';
 import { ConfigError, parsePositiveInt, requireEnv } from '../config.ts';
 import { createLogger, errorMessage } from '../log.ts';
+import { loadWeights } from '../market/runegraft.ts';
 
 const USAGE = `Serve the read API over stored exchange history and metrics.
 
@@ -11,7 +12,9 @@ Usage: npm run serve [-- --port <n>] [-- --host <address>]
   --port <n>          Port to listen on (default: API_PORT or 8080).
   --host <address>    Address to bind (default: API_HOST or 127.0.0.1).
 
-Endpoints: GET /api/leagues, /api/markets, /api/markets/:id/history, /api/status. See README: Read API.
+Pages: / (Opportunities) and /flipping (the flipping dashboard).
+Endpoints: GET /api/leagues, /api/markets, /api/markets/:id/history, /api/flips, /api/opportunities, /api/status.
+See README: Read API. Runegraft probabilities are read from data/runegraft-weights.json at start.
 The API only reads PostgreSQL; it never calls the exchange.`;
 
 const logger = createLogger();
@@ -26,10 +29,17 @@ async function main(): Promise<void> {
   }
   const port = parsePositiveInt('--port', values.port ?? process.env.API_PORT ?? '8080');
   const host = values.host ?? process.env.API_HOST ?? '127.0.0.1';
+  // An invalid weights file stops the server here rather than failing the first Opportunities request.
+  let runegraftWeights;
+  try {
+    runegraftWeights = await loadWeights();
+  } catch (error) {
+    throw new ConfigError(`runegraft weights: ${errorMessage(error)}`);
+  }
   const pool = new pg.Pool({ connectionString: requireEnv('DATABASE_URL'), max: 5 });
   pool.on('error', (error) => logger.error('idle database connection failed', { error: errorMessage(error) }));
 
-  const server = createApiServer(pool, { logger });
+  const server = createApiServer(pool, { logger, runegraftWeights });
   const stop = () => {
     logger.info('shutting down');
     server.close(() => void pool.end());
@@ -40,7 +50,7 @@ async function main(): Promise<void> {
     server.once('error', reject);
     server.listen(port, host, resolve);
   });
-  logger.info('listening', { dashboard: `http://${host}:${port}/`, api: `http://${host}:${port}/api/status` });
+  logger.info('listening', { opportunities: `http://${host}:${port}/`, flipping: `http://${host}:${port}/flipping`, api: `http://${host}:${port}/api/status` });
 }
 
 try {

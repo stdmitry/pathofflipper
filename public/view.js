@@ -341,3 +341,206 @@ export function marketQuery(state, limit) {
   if (state.q) query.q = state.q;
   return query;
 }
+
+/** The two pages share the league and window; each page's tab links to the other with them. @param {{ league: string, window: string }} state */
+export function navSearch(state) {
+  const params = new URLSearchParams();
+  if (state.league) params.set('league', state.league);
+  if (state.window !== '1h') params.set('window', state.window);
+  const text = params.toString();
+  return text ? `?${text}` : '';
+}
+
+// ---- Opportunities --------------------------------------------------------------------------------------------------
+
+/**
+ * @typedef {'flip_chaos' | 'flip_divine' | 'trade_c_d' | 'runegraft'} Kind
+ * @typedef {{ side: 'buy' | 'sell' | 'expect', label: string, item: Item | null, quantity: number, price: number, quote: Quote }} Leg
+ * @typedef {{
+ *   id: string, kind: Kind, title: string, item: Item, legs: Leg[], cost_chaos: number, return_chaos: number,
+ *   profit_chaos: number, margin_share: number, gold_per_cycle: number | null, chaos_per_1k_gold: number | null,
+ *   cycles_per_hour: number | null, chaos_per_hour_ceiling: number | null, basis: 'range' | 'ev' | 'ev_estimate',
+ *   eligible: boolean, rank: number | null, warnings: string[], detail: Record<string, any>
+ * }} Opportunity
+ */
+
+/** Kinds in display order: the label in the table and the label of the filter chip. */
+export const KINDS = /** @type {const} */ ([
+  { kind: 'flip_chaos', label: 'Flip · Chaos', chip: 'Chaos flips' },
+  { kind: 'flip_divine', label: 'Flip · Divine', chip: 'Divine flips' },
+  { kind: 'trade_c_d', label: 'Trade · c → div', chip: 'Chaos → Divine trades' },
+  { kind: 'runegraft', label: 'Runegraft 3:1', chip: 'Runegraft 3:1' },
+]);
+
+/** What each basis means, as a badge and its tooltip. */
+export const BASIS = /** @type {const} */ ({
+  range: { label: 'Range', title: "From the window's lowest and highest executed prices: an upper bound, not a spread you can capture" },
+  ev: { label: 'EV', title: 'Expected value of a random outcome; any single conversion can lose' },
+  ev_estimate: { label: 'EV est.', title: 'Expected value from incomplete probabilities or prices; treat as rough' },
+});
+
+/**
+ * A Chaos amount in the chosen display currency: "12.3c", "1.2k c", or "0.04 div" at the window's rate.
+ * @param {number | null} chaos
+ * @param {Quote} unit
+ * @param {number | null} divineRate
+ */
+export function moneyText(chaos, unit, divineRate) {
+  if (chaos === null || !Number.isFinite(chaos)) return DASH;
+  if (unit === 'divine') {
+    if (!divineRate) return DASH;
+    const div = chaos / divineRate;
+    return `${Math.abs(div) >= 100 ? compact(div) : div.toFixed(2)} div`;
+  }
+  return Math.abs(chaos) >= 1000 ? `${compact(chaos)}c` : `${chaos.toFixed(1)}c`;
+}
+
+/** What the player does, from the legs: "Buy at 12.0c · sell at 15.0c". @param {Leg[]} legs */
+export function legsText(legs) {
+  return legs
+    .map((leg, i) => {
+      const verb = leg.side === 'buy' ? 'buy' : leg.side === 'sell' ? 'sell' : 'get one worth';
+      const text =
+        leg.side === 'expect'
+          ? `${verb} ≈ ${moneyText(leg.price, 'chaos', null)}`
+          : `${verb} ${leg.quantity > 1 ? `${leg.quantity} at ` : 'at '}${rateText({ num: '', den: '', value: leg.price }, leg.quote)}`;
+      return i === 0 ? text[0].toUpperCase() + text.slice(1) : text;
+    })
+    .join(' · ');
+}
+
+/**
+ * One opportunity row, every cell as display text.
+ * @param {Opportunity} o
+ * @param {Quote} [unit] display currency
+ * @param {number | null} [divineRate] Chaos per Divine, for the Divine display
+ */
+export function opportunityRow(o, unit = 'chaos', divineRate = null) {
+  const money = (/** @type {number | null} */ n) => moneyText(n, unit, divineRate);
+  return {
+    id: o.id,
+    rank: o.rank === null ? DASH : String(o.rank),
+    kind: KINDS.find((k) => k.kind === o.kind)?.label ?? o.kind,
+    name: o.title,
+    category: legsText(o.legs),
+    unnamed: !o.item.named,
+    cost: money(o.cost_chaos),
+    ret: money(o.return_chaos),
+    profit: money(o.profit_chaos),
+    loss: o.profit_chaos <= 0,
+    marginPct: percentText(o.margin_share),
+    perGold: money(o.chaos_per_1k_gold),
+    gold: compact(o.gold_per_cycle),
+    cycles: o.cycles_per_hour === null ? DASH : `${compact(o.cycles_per_hour)}/h`,
+    ceiling: o.chaos_per_hour_ceiling === null ? DASH : `${money(o.chaos_per_hour_ceiling)}/h`,
+    basis: BASIS[o.basis].label,
+    basisTitle: BASIS[o.basis].title,
+    basisKind: o.basis,
+    warnings: o.warnings.join('\n'),
+    warningCount: o.warnings.length,
+    eligible: o.eligible,
+  };
+}
+
+/** Where a flip or trade opens on the Flipping page; null for other kinds. @param {Opportunity} o @param {{ league: string, window: string }} state */
+export function flippingHref(o, state) {
+  const quote = { flip_chaos: 'chaos', flip_divine: 'divine', trade_c_d: 'flip' }[/** @type {string} */ (o.kind)];
+  const market = o.detail.market_id ?? o.detail.buy_market_id;
+  if (!quote || !market) return null;
+  const params = new URLSearchParams(navSearch(state));
+  if (quote !== 'chaos') params.set('quote', quote);
+  params.set('market', market);
+  return `/flipping?${params}`;
+}
+
+/**
+ * The Opportunities page state. Its parameter names avoid the dashboard's quote, market, history and offset, which
+ * redirect a request for / to /flipping.
+ * @typedef {{
+ *   league: string, window: '1h' | '24h', kinds: string, scope: 'eligible' | 'all', q: string, min_profit: string,
+ *   sort: 'ceiling' | 'profit' | 'margin_pct' | 'per_gold' | 'cycles' | 'name', order: '' | 'asc' | 'desc',
+ *   page: number, open: string, unit: Quote, chart: '24h' | '7d' | '30d'
+ * }} OppState
+ */
+
+/** @type {Readonly<OppState>} */
+export const OPP_DEFAULT_STATE = Object.freeze({
+  league: '',
+  window: '1h',
+  kinds: '',
+  scope: 'eligible',
+  q: '',
+  min_profit: '',
+  sort: 'ceiling',
+  order: '',
+  page: 0,
+  open: '',
+  unit: 'chaos',
+  chart: '7d',
+});
+
+const OPP_CHOICES = /** @type {Record<string, readonly string[]>} */ ({
+  window: ['1h', '24h'],
+  scope: ['eligible', 'all'],
+  sort: ['ceiling', 'profit', 'margin_pct', 'per_gold', 'cycles', 'name'],
+  order: ['', 'asc', 'desc'],
+  unit: ['chaos', 'divine'],
+  chart: ['24h', '7d', '30d'],
+});
+
+/**
+ * Opportunities state from the address bar; invalid values fall back to defaults, so any shared link opens. `kinds`
+ * keeps only known kinds, in display order; empty means all.
+ * @param {string} search
+ * @returns {OppState}
+ */
+export function oppStateFromSearch(search) {
+  const params = new URLSearchParams(search);
+  /** @type {Record<string, string | number>} */
+  const state = { ...OPP_DEFAULT_STATE };
+  for (const key of Object.keys(OPP_DEFAULT_STATE)) {
+    const value = params.get(key);
+    if (value === null) continue;
+    if (key === 'page') state.page = /^\d{1,3}$/.test(value) ? Number(value) : 0;
+    else if (key === 'kinds') state.kinds = selectedKinds(value).join(',');
+    else if (key === 'min_profit') state.min_profit = /^-?\d{1,9}(\.\d{1,6})?$/.test(value) ? value : '';
+    else if (!OPP_CHOICES[key] || OPP_CHOICES[key].includes(value)) state[key] = value.slice(0, 200);
+  }
+  if (state.kinds === KINDS.map((k) => k.kind).join(',')) state.kinds = '';
+  return /** @type {OppState} */ (state);
+}
+
+/** The address-bar query for an Opportunities state, omitting defaults. @param {OppState} state */
+export function searchFromOppState(state) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(state)) {
+    if (value !== /** @type {Record<string, unknown>} */ (OPP_DEFAULT_STATE)[key] && value !== '') params.set(key, String(value));
+  }
+  const text = params.toString();
+  return text ? `?${text}` : '';
+}
+
+/** Known kinds in a comma list, in display order; all kinds for an empty list. @param {string} kinds @returns {Kind[]} */
+export function selectedKinds(kinds) {
+  const chosen = new Set(kinds.split(','));
+  const known = KINDS.map((k) => k.kind).filter((k) => chosen.has(k));
+  return kinds === '' ? KINDS.map((k) => k.kind) : known;
+}
+
+/** Query parameters for /api/opportunities. @param {OppState} state @param {number} limit */
+export function opportunityQuery(state, limit) {
+  /** @type {Record<string, string>} */
+  const query = {
+    league: state.league,
+    window: state.window,
+    scope: state.scope,
+    sort: state.sort,
+    limit: String(limit),
+    offset: String(state.page * limit),
+  };
+  if (state.order) query.order = state.order;
+  if (state.q) query.q = state.q;
+  if (state.kinds) query.kinds = state.kinds;
+  if (state.min_profit) query.min_profit = state.min_profit;
+  return query;
+}
