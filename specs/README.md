@@ -11,3 +11,5 @@ See [Implementation plan](./implementation-plan.md) for API findings, proposed a
 We will capture confirmed requirements here as the project takes shape, keeping open questions separate from agreed decisions.
 
 [GitHub issue backlog](./github-issue-drafts.md) links the nine published issues in [stdmitry/pathofflipper](https://github.com/stdmitry/pathofflipper/issues). Start with [#9: fetch currency exchange data and set up PostgreSQL](https://github.com/stdmitry/pathofflipper/issues/9).
+
+[Opportunities view](./opportunities-view-spec.md) proposes one page listing flips, trades, Runegraft conversions and recipes side by side, as the new landing page; the existing dashboard moves to `/flipping`.
