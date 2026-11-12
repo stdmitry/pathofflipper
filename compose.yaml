@@ -19,5 +19,23 @@ services:
       retries: 10
       start_period: 10s
 
+  # Optional: npm run scheduler in a container. Starts only with `docker compose --profile scheduler up -d`, so
+  # npm run db:up still starts PostgreSQL alone. Uses the checkout and its node_modules (npm ci first).
+  scheduler:
+    profiles: [scheduler]
+    image: node:24-alpine
+    restart: unless-stopped
+    init: true
+    working_dir: /app
+    command: ["node", "src/cli/scheduler.ts"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-pathofflipper}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pathofflipper}
+    volumes:
+      - ./:/app:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:

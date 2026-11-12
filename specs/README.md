@@ -11,3 +11,5 @@ See [Implementation plan](./implementation-plan.md) for API findings, proposed a
 We will capture confirmed requirements here as the project takes shape, keeping open questions separate from agreed decisions.
 
 [GitHub issue backlog](./github-issue-drafts.md) links the nine published issues in [stdmitry/pathofflipper](https://github.com/stdmitry/pathofflipper/issues). Start with [#9: fetch currency exchange data and set up PostgreSQL](https://github.com/stdmitry/pathofflipper/issues/9).
+
+[Scheduled pipeline](./scheduled-pipeline-spec.md) runs fetch, parse, metrics and the Runegraft recommended price in dependency order on a timer, and records each job's state ([#29](https://github.com/stdmitry/pathofflipper/issues/29)).

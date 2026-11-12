@@ -38,6 +38,7 @@ const PROBLEMS = /** @type {Record<string, string>} */ ({
   rejected_responses: 'The exchange returned malformed responses in the last 24 hours.',
   metrics_behind: 'Market metrics are older than the newest collected hour.',
   gaps_last_24h: 'Some of the last 24 hours are missing.',
+  jobs_failing: 'A scheduled job failed 3 or more times in a row.',
 });
 
 /**

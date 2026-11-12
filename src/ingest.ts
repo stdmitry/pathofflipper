@@ -9,6 +9,8 @@ import { errorMessage, silentLogger, type Logger } from './log.ts';
 const INGEST_LOCK_NAMESPACE = 7_319_001;
 const PARSE_LOCK_NAMESPACE = 7_319_002;
 const METRICS_LOCK_NAMESPACE = 7_319_003;
+const RUNEGRAFT_LOCK_NAMESPACE = 7_319_011;
+const PIPELINE_LOCK_NAMESPACE = 7_319_010;
 
 export interface IngestOptions {
   /** Upper bound on hours stored in this run. */
@@ -50,6 +52,16 @@ export function withParseLock<T>(pool: pg.Pool, fn: () => Promise<T>): Promise<T
 /** Runs `fn` while holding the PC metrics lock, so two metric runs never replace each other's snapshot. */
 export function withMetricsLock<T>(pool: pg.Pool, fn: () => Promise<T>): Promise<T> {
   return withRealmLock(pool, METRICS_LOCK_NAMESPACE, 'metrics run', fn);
+}
+
+/** Runs `fn` while holding the PC Runegraft lock, so two Runegraft runs never replace each other's rows. */
+export function withRunegraftLock<T>(pool: pg.Pool, fn: () => Promise<T>): Promise<T> {
+  return withRealmLock(pool, RUNEGRAFT_LOCK_NAMESPACE, 'Runegraft run', fn);
+}
+
+/** Runs `fn` while holding the PC pipeline lock, so two scheduler ticks never overlap. */
+export function withPipelineLock<T>(pool: pg.Pool, fn: () => Promise<T>): Promise<T> {
+  return withRealmLock(pool, PIPELINE_LOCK_NAMESPACE, 'pipeline tick', fn);
 }
 
 async function withRealmLock<T>(pool: pg.Pool, namespace: number, holders: string, fn: () => Promise<T>): Promise<T> {
