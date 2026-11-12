@@ -85,6 +85,14 @@ WHERE l.name = 'Mirage' AND m.window_hours = 24 AND m.activity_rank IS NOT NULL
 ORDER BY m.activity_rank LIMIT 20;
 ```
 
+## Runegraft 3:1 conversion
+
+`npm run runegraft -- --league <name>` finds Runegrafts that cost less than the expected value of the random 3:1 vendor conversion ([#23](https://github.com/stdmitry/pathofflipper/issues/23), [spec](./specs/runegraft-conversion-mvp-spec.md)). EV is the sum of probability × Chaos price over outcomes priced strictly above 20 chaos. The recommended buy price is EV / 3 × (1 − margin), with a default margin of 30%. Every Runegraft priced strictly below it is listed, cheapest first, with its expected profit EV − 3 × price. Gold, fees and time are not included.
+
+Prices come from the Chaos metrics snapshot, so run `npm run metrics` first. That snapshot is hourly history, not an order book. The buy price is the lowest executed Chaos price in the window (`--window 1|24`, default 24), and an outcome is valued at the volume-weighted price. Available quantity is not in the data and is reported as unknown.
+
+Outcome probabilities live in [`data/runegraft-weights.json`](./data/runegraft-weights.json). No community measurement was found, so every probability is `null` (unknown) and EV is reported as unknown. Fill in measured probabilities, or pass `--assume-uniform` to split the unassigned probability equally among the unknown outcomes. Whenever probabilities are unknown, they don't sum to 1, or an outcome has no price, EV is labelled an estimate. The spec assumes the outcome doesn't depend on which Runegrafts go in; that is not verified yet.
+
 ## Dashboard
 
 `npm run serve` also serves the dashboard at <http://127.0.0.1:8080/>. It is plain HTML and browser JavaScript in [`public/`](./public), with no build step. It reads only the API described below.

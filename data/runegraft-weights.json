@@ -1,0 +1,167 @@
+{
+  "note": "Outcome probabilities of the random Runegraft 3:1 vendor recipe. null means unknown: no community measurement was found when this file was created (2026-11-12). Replace null with a measured probability (0..1) and record the source. Assumes the outcome does not depend on the input Runegrafts; that is unverified.",
+  "source": null,
+  "updated_at": "2026-11-12",
+  "weights": [
+    {
+      "name": "Runegraft of Loyalty",
+      "path": "Metadata/Items/Currency/RunegraftAilmentRedirect",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Fortress",
+      "path": "Metadata/Items/Currency/RunegraftAttributeGlobalDefences",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Bound",
+      "path": "Metadata/Items/Currency/RunegraftBootsGloves",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Warp",
+      "path": "Metadata/Items/Currency/RunegraftBuffScaling",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Refraction",
+      "path": "Metadata/Items/Currency/RunegraftChainMana",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Connection",
+      "path": "Metadata/Items/Currency/RunegraftConnection",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Consecration",
+      "path": "Metadata/Items/Currency/RunegraftConsecratedGround",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Time",
+      "path": "Metadata/Items/Currency/RunegraftCooldownRefresh",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Restitching",
+      "path": "Metadata/Items/Currency/RunegraftCritRecoup",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Jeweller",
+      "path": "Metadata/Items/Currency/RunegraftDamagePerSocket",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Agile",
+      "path": "Metadata/Items/Currency/RunegraftElusive",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Angler",
+      "path": "Metadata/Items/Currency/RunegraftFishing",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Sinistral",
+      "path": "Metadata/Items/Currency/RunegraftFlatOffhandAttackTime",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Rallying",
+      "path": "Metadata/Items/Currency/RunegraftFortificationBanner",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Fury",
+      "path": "Metadata/Items/Currency/RunegraftLifeFlaskRage",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Quaffing",
+      "path": "Metadata/Items/Currency/RunegraftLifeFromManaFlasks",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the River",
+      "path": "Metadata/Items/Currency/RunegraftLowLifeRestore",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Combatant",
+      "path": "Metadata/Items/Currency/RunegraftMatchedAttackDamage",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Novamark",
+      "path": "Metadata/Items/Currency/RunegraftNovaMarkedTarget",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Gauche",
+      "path": "Metadata/Items/Currency/RunegraftOffhandInvert",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Rotblood",
+      "path": "Metadata/Items/Currency/RunegraftPoisonConversion",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Blasphemy",
+      "path": "Metadata/Items/Currency/RunegraftRandomCurse",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Resurgence",
+      "path": "Metadata/Items/Currency/RunegraftResurgence",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Soulwick",
+      "path": "Metadata/Items/Currency/RunegraftSouls",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Witchmark",
+      "path": "Metadata/Items/Currency/RunegraftSpellLifeCost",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Spellbound",
+      "path": "Metadata/Items/Currency/RunegraftSpellbound",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Suffering",
+      "path": "Metadata/Items/Currency/RunegraftSuffering",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Gemcraft",
+      "path": "Metadata/Items/Currency/RunegraftSupportLevels",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of the Imbued",
+      "path": "Metadata/Items/Currency/RunegraftTinctures",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Treachery",
+      "path": "Metadata/Items/Currency/RunegraftTreacherousAuras",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Stability",
+      "path": "Metadata/Items/Currency/RunegraftUnexciting",
+      "probability": null
+    },
+    {
+      "name": "Runegraft of Bellows",
+      "path": "Metadata/Items/Currency/RunegraftWarcrySpeed",
+      "probability": null
+    }
+  ]
+}
